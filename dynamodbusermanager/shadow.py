@@ -15,7 +15,7 @@ from os import (
 )
 from os.path import exists
 from time import sleep, time
-from typing import Callable, Dict, List, Optional, TextIO, Tuple, Union
+from typing import Callable, Dict, List, Optional, Set, TextIO, Tuple, Union
 from .constants import (
     EPOCH, FIELD_FIX, FIELD_PATTERN, GID_MIN, GID_MAX, GROUP_FILE, GSHADOW_FILE,
     LOCK_ALL, LOCK_GROUP, LOCK_GSHADOW, LOCK_PASSWD, LOCK_SHADOW, NAME_PATTERN,
@@ -53,7 +53,7 @@ class ShadowDatabase():
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
 
-        with ShadowDatabaseLock():
+        with ShadowDatabaseLock(timeout=15):
             self._load_passwd_file()
             self._load_group_file()
             self._load_gshadow_file()
@@ -64,7 +64,7 @@ class ShadowDatabase():
         shadow_db.write() -> None
         Write the users and groups to the shadow database files.
         """
-        with ShadowDatabaseLock():
+        with ShadowDatabaseLock(timeout=15):
             self._write_user_plus_files()
             self._write_group_plus_files()
             self._rotate_files()
@@ -102,30 +102,30 @@ class ShadowDatabase():
 
                 parts = line.split(":")
                 # Format should be 7 parts:
-                # user_name:password:UID:GID:GECOS:directory:shell
+                # name:password:UID:GID:GECOS:directory:shell
                 # password should be 'x' to force use of the shadow file.
                 if len(parts) != 7:
                     log.warning("Invalid passwd entry: %s", line)
                     continue
 
-                (user_name, password, uid_str, gid_str, real_name, home,
+                (name, password, uid_str, gid_str, real_name, home,
                  shell) = parts
                 modified = False
 
-                if not NAME_PATTERN.match(user_name):
-                    log.error("Invalid passwd entry (bad user_name): %r", line)
+                if not NAME_PATTERN.match(name):
+                    log.error("Invalid passwd entry (bad name): %r", line)
                     continue
 
-                if len(user_name) > NAME_MAX_LENGTH:
+                if len(name) > NAME_MAX_LENGTH:
                     log.error(
-                        "Invalid passwd entry (user_name too long): %r", line)
+                        "Invalid passwd entry (name too long): %r", line)
                     continue
 
                 if password != 'x':
                     log.warning(
                         "Password for user %s is not set to the shadow file; "
                         "this will be forced when passwd is overwritten",
-                        user_name)
+                        name)
 
                 try:
                     uid = int(uid_str)
@@ -160,8 +160,8 @@ class ShadowDatabase():
                     shell = "/bin/false"
                     modified = True
 
-                self.users[user_name] = User(
-                    user_name=user_name, uid=uid, gid=gid, real_name=real_name,
+                self.users[name] = User(
+                    name=name, uid=uid, gid=gid, real_name=real_name,
                     home=home, shell=shell, modified=modified)
 
     def _load_group_file(self) -> None:
@@ -182,29 +182,29 @@ class ShadowDatabase():
 
                 parts = line.split(":")
                 # Format should be 4 parts:
-                # group_name:password:GID:members
+                # name:password:GID:members
                 # password should be 'x' to force use of the shadow file.
                 if len(parts) != 4:
                     log.warning("Invalid group entry: %s", line)
                     continue
 
-                group_name, password, gid_str, members_str = parts
+                name, password, gid_str, members_str = parts
                 modified = False
 
-                if not NAME_PATTERN.match(group_name):
-                    log.error("Invalid group entry (bad group_name): %r", line)
+                if not NAME_PATTERN.match(name):
+                    log.error("Invalid group entry (bad name): %r", line)
                     continue
 
-                if len(group_name) > NAME_MAX_LENGTH:
+                if len(name) > NAME_MAX_LENGTH:
                     log.error(
-                        "Invalid group entry (group_name too long): %r", line)
+                        "Invalid group entry (name too long): %r", line)
                     continue
 
                 if password != 'x':
                     log.warning(
                         "Password for group %s is not set to the shadow file; "
                         "this will be forced when passwd is overwritten",
-                        group_name)
+                        name)
 
                 try:
                     gid = int(gid_str)
@@ -217,20 +217,23 @@ class ShadowDatabase():
                 if not FIELD_PATTERN.match(members_str):
                     log.warning(
                         "Invalid group entry (bad members list): %r", line)
-                    members = []    # type: List[str]
+                    members = set() # type: Set[str]
                     modified = True
+                elif not members_str.strip():
+                    members = set()
                 else:
-                    members = [
-                        member.strip() for member in members_str.split(",")]
-                    filtered_members = [
-                        m for m in members if NAME_PATTERN.match(m)]
+                    members = {
+                        member.strip() for member in members_str.split(",")}
+                    filtered_members = {
+                        m for m in members if NAME_PATTERN.match(m)}
                     if filtered_members != members:
                         log.warning(
                             "Invalid group entry (bad members list): %r", line)
                         members = filtered_members
+                        modified = True
 
-                self.groups[group_name] = Group(
-                    group_name=group_name, gid=gid, members=members,
+                self.groups[name] = Group(
+                    name=name, gid=gid, members=members,
                     modified=modified)
 
     def _load_gshadow_file(self) -> None:
@@ -256,14 +259,14 @@ class ShadowDatabase():
 
                 parts = line.split(":")
                 # Format should be 4 parts:
-                # group_name:encrypted_password:administrators:members
+                # name:encrypted_password:administrators:members
                 if len(parts) != 4:
                     log.warning("Invalid gshadow entry (line %d)", line_no + 1)
                     continue
 
-                group_name, password, administrators_str, members_str = parts
+                name, password, administrators_str, members_str = parts
 
-                group = self.groups.get(group_name)
+                group = self.groups.get(name)
                 if group is None:
                     log.error("%s:%d: Unknown group", GSHADOW_FILE, line_no)
                     continue
@@ -349,10 +352,14 @@ class ShadowDatabase():
                     log.warning("Invalid shadow entry (line %d)", line_no + 1)
                     continue
 
-                (user_name, password, last_password_change_date_str,
-                 password_age_min_days_str, password_age_max_days_str,
-                 password_warn_days_str, password_disable_days_str,
-                 account_expire_date_str) = parts[:8]
+                user_name = parts[0]
+                password = parts[1]
+
+
+                (user_name, password, last_password_change_date,
+                 password_age_min_days, password_age_max_days,
+                 password_warn_days, password_disable_days,
+                 account_expire_date) = parts[:8]
 
                 user = self.users.get(user_name)
                 if user is None:
@@ -365,63 +372,76 @@ class ShadowDatabase():
                         line_no)
                     user.password = '!'
                     user.modified = True
-
-                if not NUMERIC_FIELD_PATTERN.match(
-                        last_password_change_date_str):
-                    log.warning(
-                        "%s:%d Bad character in last_password_change_date",
-                        SHADOW_FILE, line_no)
-                    user.last_password_change_date = None
-                    user.modified = True
                 else:
-                    user.last_password_change_date = EPOCH + timedelta(
-                        days=int(last_password_change_date_str))
+                    user.password = password
 
-                if not NUMERIC_FIELD_PATTERN.match(password_age_min_days_str):
-                    log.warning(
-                        "%s:%d Bad character in password_age_min_days",
-                        SHADOW_FILE, line_no)
-                    user.password_age_min_days = None
-                    user.modified = True
-                else:
-                    user.password_age_min_days = int(password_age_min_days_str)
+                self._parse_shadow_date_field(
+                    user, last_password_change_date,
+                    "last_password_change_date", line_no)
+                self._parse_shadow_int_field(
+                    user, password_age_min_days, "password_age_min_days",
+                    line_no)
+                self._parse_shadow_int_field(
+                    user, password_age_max_days, "password_age_max_days",
+                    line_no)
+                self._parse_shadow_int_field(
+                    user, password_warn_days, "password_warn_days",
+                    line_no)
+                self._parse_shadow_int_field(
+                    user, password_disable_days, "password_disable_days",
+                    line_no)
+                self._parse_shadow_date_field(
+                    user, account_expire_date, "account_expire_date", line_no)
 
-                if not NUMERIC_FIELD_PATTERN.match(password_age_max_days_str):
-                    log.warning(
-                        "%s:%d Bad character in password_age_max_days",
-                        SHADOW_FILE, line_no)
-                    user.password_age_max_days = None
-                    user.modified = True
-                else:
-                    user.password_age_max_days = int(password_age_max_days_str)
+    @staticmethod
+    def _parse_shadow_date_field(user: User, value: str, name: str, line_no: int) -> None:
+        """
+        ShadowDatabase._parse_shadow_date_field(value: str, name: str, line_no: int) -> None
+        Parse an optional date field (in integer form, number of days since
+        Jan 1, 1970) from the shadow file.
 
-                if not NUMERIC_FIELD_PATTERN.match(password_warn_days_str):
-                    log.warning(
-                        "%s:%d Bad character in password_warn_days",
-                        SHADOW_FILE, line_no)
-                    user.password_warn_days = None
-                    user.modified = True
-                else:
-                    user.password_warn_days = int(password_warn_days_str)
+        If it is invalid, log an error without logging its content for security
+        purposes (in case the shadow file is malformed and the hashed password
+        has overflown into this field); set the field to None and indicate the
+        user has been modified from the shadow contents.
 
-                if not NUMERIC_FIELD_PATTERN.match(password_disable_days_str):
-                    log.warning(
-                        "%s:%d Bad character in password_disable_days",
-                        SHADOW_FILE, line_no)
-                    user.password_disable_days = None
-                    user.modified = True
-                else:
-                    user.password_disable_days = int(password_disable_days_str)
+        If it is empty, set the field to None.
 
-                if not NUMERIC_FIELD_PATTERN.match(account_expire_date_str):
-                    log.warning(
-                        "%s:%d Bad character in account_expire_date",
-                        SHADOW_FILE, line_no)
-                    user.account_expire_date = None
-                    user.modified = True
-                else:
-                    user.account_expire_date = EPOCH + timedelta(
-                        days=int(account_expire_date_str))
+        Otherwise, set the field to the date this value represents.
+        """
+        if not NUMERIC_FIELD_PATTERN.match(value):
+            log.warning("%s:%d Bad character in %s", SHADOW_FILE, line_no, name)
+            setattr(user, name, None)
+            user.modified = True
+        elif not value:
+            setattr(user, name, None)
+        else:
+            date_value = EPOCH + timedelta(days=int(value))
+            setattr(user, name, date_value)
+
+    @staticmethod
+    def _parse_shadow_int_field(user: User, value: str, name: str, line_no: int) -> None:
+        """
+        ShadowDatabase._parse_shadow_int_field(value: str, name: str, line_no: int) -> None
+        Parse an optional integer field from the shadow file.
+
+        If it is invalid, log an error without logging its content for security
+        purposes (in case the shadow file is malformed and the hashed password
+        has overflown into this field); set the field to None and indicate the
+        user has been modified from the shadow contents.
+
+        If it is empty, set the field to None.
+
+        Otherwise, set the field to the integer value this value represents.
+        """
+        if not NUMERIC_FIELD_PATTERN.match(value):
+            log.warning("%s:%d Bad character in %s", SHADOW_FILE, line_no, name)
+            setattr(user, name, None)
+            user.modified = True
+        elif not value:
+            setattr(user, name, None)
+        else:
+            setattr(user, name, int(value))
 
     def _write_user_plus_files(self) -> None:
         """
@@ -458,12 +478,12 @@ class ShadowDatabase():
             user: User, passwd: TextIO, shadow: TextIO) -> None
         Write the specified user out to the passwd+ and shadow+ files.
         """
-        user_name = user.user_name
+        name = user.name
         # passwd format is 7 parts:
-        # user_name:password:UID:GID:GECOS:directory:shell
+        # name:password:UID:GID:GECOS:directory:shell
         # password is 'x' to force use of the shadow file.
         passwd.write(
-            f"{user_name}:x:{user.uid}:{user.gid}:"
+            f"{name}:x:{user.uid}:{user.gid}:"
             f"{user.real_name}:{user.home}:{user.shell}\n")
 
         # shadow format is 9 parts:
@@ -489,7 +509,7 @@ class ShadowDatabase():
             if user.account_expire_date is not None else "")
 
         shadow.write(
-            f"{user.user_name}:{password}:{change_days_str}:{age_min_str}:"
+            f"{name}:{password}:{change_days_str}:{age_min_str}:"
             f"{age_max_str}:{warn_days_str}:{expire_days_str}:\n")
 
     @staticmethod
@@ -499,21 +519,21 @@ class ShadowDatabase():
             group: Group, gfile: TextIO, gshadow: TextIO) -> None
         Write the specified group out to the group+ and gshadow+ files.
         """
-        group_name = group.group_name
+        name = group.name
         administrators = ",".join(sorted(group.administrators))
         members = ",".join(sorted(group.members))
 
         # group format is 4 parts:
-        # group_name:password:GID:members
+        # name:password:GID:members
         # password is 'x' to force use of the shadow file.
-        gfile.write(f"{group_name}:x:{group.gid}:{members}\n")
+        gfile.write(f"{name}:x:{group.gid}:{members}\n")
 
         # gshadow format is 4 parts:
-        # group_name:encrypted_password:administrators:members
+        # name:encrypted_password:administrators:members
         password_str = (
             group.password if group.password is not None else "!")
 
-        gshadow.write(f"{group_name}:{password_str}:{administrators}:{members}\n")
+        gshadow.write(f"{name}:{password_str}:{administrators}:{members}\n")
 
     @staticmethod
     def _rotate_files() -> None:
@@ -535,7 +555,7 @@ class ShadowDatabase():
                 unlink(backup_filename)
 
             rename(filename, backup_filename)
-            rename(new_filename, backup_filename)
+            rename(new_filename, filename)
 
 
 class ShadowDatabaseLock():
@@ -698,7 +718,7 @@ class ShadowDatabaseLock():
                         if lock_pid <= 0:
                             raise ValueError(f"Invalid lock pid {lock_pid}")
                     except ValueError as e:
-                        raise OSError(EIO, strerror(EIO))
+                        raise OSError(EIO, strerror(EIO)) from e
 
                     # Does this process exist?
                     try:
@@ -714,7 +734,10 @@ class ShadowDatabaseLock():
                             raise
                     else:
                         log.info("Lock process %d is still alive", lock_pid)
-                        raise OSError(EAGAIN, strerror(EAGAIN))
+                        if lock_pid == pid:
+                            log.error("Lock process %d is our pid!", lock_pid)
+                            raise OSError(EIO, strerror(EIO)) from e
+                        raise OSError(EAGAIN, strerror(EAGAIN)) from e
 
                     # Nope; wipe the lock file and try again.
                     log.debug("Removing stale lock file %s", lock_filename)
@@ -771,6 +794,7 @@ class ShadowDatabaseLock():
             try:
                 return self._lock_file_immediate(filename)
             except OSError as e:
+                log.debug("Got OSError %s", e, exc_info=True)
                 # If we failed for a reason other than waiting for the lock,
                 # or we were told to just try once, exit here.
                 if e.errno != EAGAIN or timeout == 0:
@@ -802,7 +826,7 @@ class ShadowDatabaseLock():
 
         try:
             log.debug("Validating that we own lock file %s", lock_file)
-            fd = open(filename, "r+")
+            fd = open(lock_file, "r+")
         except OSError as e:
             log.error("Unable to open lock file %s: %s", lock_file, e)
             raise
@@ -811,7 +835,7 @@ class ShadowDatabaseLock():
         try:
             lock_pid = int(lock_pid_str)
         except ValueError as e:
-            log.error("Lock file does not contain valid pid data: %r", lock_pid)
+            log.error("Lock file does not contain valid pid data: %r", lock_pid_str)
             raise OSError(EINVAL, strerror(EINVAL))
 
         if lock_pid != pid:
@@ -819,6 +843,7 @@ class ShadowDatabaseLock():
             raise OSError(EINVAL, strerror(EINVAL))
 
         fd.close()
+        log.debug("Unlinking %s", lock_file)
         unlink(lock_file)
         self.lock_count = 0
 

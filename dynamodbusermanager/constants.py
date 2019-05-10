@@ -29,7 +29,7 @@ NAME_PATTERN = re_compile(r"^[a-zA-Z0-9_\.][-a-zA-Z0-9_\.]*$")
 FIELD_PATTERN = re_compile(r"^[^:\n\v\f\0]*$")
 FIELD_FIX = re_compile(r"[:\n\v\f\0]+")
 
-NUMERIC_FIELD_PATTERN = re_compile("r[+-]?[0-9]*$")
+NUMERIC_FIELD_PATTERN = re_compile(r"^[+-]?[0-9]*$")
 
 # There's no defined limit on the GECOS field, but 512 is a common buffer
 # size for the entire passwd line. Given that we allow 256 characters for

@@ -7,6 +7,8 @@ from os import environ
 import requests
 from requests.exceptions import ConnectTimeout
 
+# pylint: disable=C0103
+
 AZ_METADATA_URL = (
     "http://169.254.169.254/2018-09-24/meta-data/placement/"
     "availability-zone")

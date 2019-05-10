@@ -5,14 +5,15 @@ from functools import total_ordering
 from typing import (Any, Collection, Dict, List, NamedTuple, Optional, Set,
                     Tuple, Union)
 
-from .constants import GID_MIN, GID_MAX, NAME_MAX_LENGTH, NAME_PATTERN
+from .constants import NAME_PATTERN
+from .entity import Entity
 
 class GroupTuple(NamedTuple):
     """
     UserTuple(NamedTuple)
     Holds the data for a Group object in an immutable format.
     """
-    group_name: str
+    name: str
     gid: int
     administrators: Set[str]
     members: Set[str]
@@ -20,15 +21,16 @@ class GroupTuple(NamedTuple):
     modified: bool
 
 @total_ordering
-class Group(): # pylint: disable=W0201
+class Group(Entity):
     """
     Group object for holding data about a single group entry in the /etc/group
     and /etc/gshadow files.
     """
+    # pylint: disable=W0201
 
     def __init__(
             self,
-            group_name: str,
+            name: str,
             gid: int,
             administrators: Optional[Collection[str]] = None,
             members: Optional[Collection[str]] = None,
@@ -36,7 +38,7 @@ class Group(): # pylint: disable=W0201
             modified: bool = False) -> None:
         """
         Group(
-            group_name: str,
+            name: str,
             gid: int,
             administrators: Optional[Collection[str]] = None,
             members: Optional[Collection[str]] = None,
@@ -44,13 +46,9 @@ class Group(): # pylint: disable=W0201
             modified: bool = False) -> Group
         Create a new Group object.
         """
-        super(Group, self).__init__()
-        self.group_name = group_name
-        self.gid = gid
+        super(Group, self).__init__(name=name, gid=gid, password=password, modified=modified)
         self.administrators = administrators
         self.members = members
-        self.password = password
-        self.modified = modified
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Group):
@@ -65,52 +63,8 @@ class Group(): # pylint: disable=W0201
         return self.as_tuple != other.as_tuple
 
     def __lt__(self, other: "Group") -> bool:
-        if not isinstance(other, Group):
-            raise TypeError(
-                f"'<' not supported between instances of "
-                f"{type(self).__name__!r} and {type(other).__name__!r}")
-
+        self._lt_check_other_type(other)
         return self.as_tuple < other.as_tuple
-
-    @property
-    def group_name(self) -> str:
-        """
-        The name of the group.
-        """
-        return self._group_name
-
-    @group_name.setter
-    def group_name(self, value: str) -> None:
-        if not isinstance(value, str):
-            raise TypeError("group_name must be a string")
-        if not value:
-            raise ValueError("group_name cannot be empty")
-        if len(value) > NAME_MAX_LENGTH:
-            raise ValueError(
-                f"group_name cannot be longer than {NAME_MAX_LENGTH} characters")
-        if not NAME_PATTERN.match(value):
-            raise ValueError("group_name contains illegal characters")
-
-        self._group_name = value
-
-    @property
-    def gid(self) -> int:
-        """
-        The integer group id of the group.
-        """
-        return self._gid
-
-    @gid.setter
-    def gid(self, value: int) -> None:
-        if not isinstance(value, int):
-            raise TypeError("gid must be an int")
-
-        if not GID_MIN <= value <= GID_MAX:
-            raise ValueError(
-                f"gid must be between {GID_MIN} and {GID_MAX}, inclusive: "
-                f"{value}")
-
-        self._gid = value
 
     @property
     def administrators(self) -> Set[str]:
@@ -165,31 +119,24 @@ class Group(): # pylint: disable=W0201
                 raise ValueError(f"username contains illegal characters: {username}")
 
         self._members = set(value)
-        return
-
-    @property
-    def password(self) -> Optional[str]:
+    
+    def add_member(self, name: str) -> None:
         """
-        The hashed password to gain access to the group.
+        Add a user to this group.
         """
-        return self._password
-
-    @password.setter
-    def password(self, value: Optional[str]) -> None:
-        if value is None:
-            self._password = None
-            return
-
-        if not isinstance(value, str):
-            raise TypeError("password must be a string")
-
-        if not value:
-            raise TypeError("password cannot be empty")
-
-        if ":" in value or "\n" in value:
-            raise TypeError("password contains illegal characters")
-
-        self._password = value
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        
+        if not NAME_PATTERN.match(name):
+            raise ValueError(f"name contains illegal characters: {name}")
+        
+        self._members.add(name)
+    
+    def remove_member(self, name: str) -> None:
+        """
+        Remove a user from this group.
+        """
+        self._members.remove(name)
 
     @property
     def as_tuple(self) -> GroupTuple:
@@ -197,7 +144,7 @@ class Group(): # pylint: disable=W0201
         The group represented as an immutable tuple object.
         """
         return GroupTuple(
-            group_name=self.group_name,
+            name=self.name,
             gid=self.gid,
             administrators=self.administrators,
             members=self.members,
@@ -214,17 +161,11 @@ class Group(): # pylint: disable=W0201
         Update the group from a given DynamoDB item. If an attribute has been
         modified, the modified flag is set to true.
 
-        The group_name field cannot be updated.
+        The name field cannot be updated.
 
         The return value is the value of the modified flag.
         """
-        if self.group_name != item["GroupName"]["S"]:
-            raise ValueError("Cannot update group_name")
-
-        gid = item["GID"]["N"]
-        if self.gid != gid:
-            self.gid = gid
-            self.modified = True
+        super(Group, self).update_from_dynamodb_item(item)
 
         administrators = set(item.get("Administrators", {}).get("SS", []))
         if self.administrators != administrators:
@@ -234,11 +175,6 @@ class Group(): # pylint: disable=W0201
         members = set(item.get("Members", {}).get("SS", []))
         if self.members != members:
             self.members = members
-            self.modified = True
-
-        password = item.get("Password", {}).get("S")
-        if self.password != password:
-            self.password = password
             self.modified = True
 
         return self.modified

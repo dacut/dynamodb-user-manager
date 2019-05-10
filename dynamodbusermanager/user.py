@@ -6,16 +6,17 @@ from functools import total_ordering
 from typing import Any, Dict, Optional, NamedTuple, Type, TypeVar
 
 from .constants import (
-    EPOCH, FIELD_PATTERN, GID_MIN, GID_MAX, NAME_MAX_LENGTH, NAME_PATTERN,
-    REAL_NAME_MAX_LENGTH, UID_MIN, UID_MAX
-)
+    EPOCH, FIELD_PATTERN, REAL_NAME_MAX_LENGTH, UID_MIN, UID_MAX)
+from .entity import Entity
+
+# pylint: disable=C0103
 
 class UserTuple(NamedTuple):
     """
     UserTuple(NamedTuple)
     Holds the data for a User object in an immutable format.
     """
-    user_name: str
+    name: str
     uid: int
     gid: int
     real_name: str
@@ -33,15 +34,16 @@ class UserTuple(NamedTuple):
 U = TypeVar("U", bound="User")  # pylint: disable=C0103
 
 @total_ordering
-class User(): # pylint: disable=W0201
+class User(Entity):
     """
     User object for holding data about a single user entry in the /etc/passwd
     and /etc/shadow files.
     """
+    # pylint: disable=W0201
 
     def __init__(
             self,
-            user_name: str,
+            name: str,
             uid: int,
             gid: int,
             real_name: str,
@@ -57,7 +59,7 @@ class User(): # pylint: disable=W0201
             modified: bool = False) -> None:
         """
         User(
-            user_name: str,
+            name: str,
             uid: int,
             gid: int,
             real_name: str,
@@ -73,21 +75,18 @@ class User(): # pylint: disable=W0201
             modified: bool = False) -> User
         Create a new User object.
         """
-        super(User, self).__init__()
-        self.user_name = user_name
+        super(User, self).__init__(name=name, gid=gid, password=password, modified=modified)
+        self.name = name
         self.uid = uid
-        self.gid = gid
         self.real_name = real_name
         self.home = home
         self.shell = shell
-        self.password = password
         self.last_password_change_date = last_password_change_date
         self.password_age_min_days = password_age_min_days
         self.password_age_max_days = password_age_max_days
         self.password_warn_days = password_warn_days
         self.password_disable_days = password_disable_days
         self.account_expire_date = account_expire_date
-        self.modified = modified
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, User):
@@ -102,33 +101,8 @@ class User(): # pylint: disable=W0201
         return self.as_tuple != other.as_tuple
 
     def __lt__(self, other: "User") -> bool:
-        if not isinstance(other, User):
-            raise TypeError(
-                f"'<' not supported between instances of "
-                f"{type(self).__name__!r} and {type(other).__name__!r}")
-
+        self._lt_check_other_type(other)
         return self.as_tuple < other.as_tuple
-
-    @property
-    def user_name(self) -> str:
-        """
-        The login name of the user.
-        """
-        return self._user_name
-
-    @user_name.setter
-    def user_name(self, value: str) -> None:
-        if not isinstance(value, str):
-            raise TypeError("user_name must be a string")
-        if not value:
-            raise ValueError("user_name cannot be empty")
-        if len(value) > NAME_MAX_LENGTH:
-            raise ValueError(
-                f"user_name cannot be longer than {NAME_MAX_LENGTH} characters")
-        if not NAME_PATTERN.match(value):
-            raise ValueError("user_name contains illegal characters")
-
-        self._user_name = value
 
     @property
     def uid(self) -> int:
@@ -148,25 +122,6 @@ class User(): # pylint: disable=W0201
                 f"{value}")
 
         self._uid = value
-
-    @property
-    def gid(self) -> int:
-        """
-        The integer initial group id of the user.
-        """
-        return self._gid
-
-    @gid.setter
-    def gid(self, value: int) -> None:
-        if not isinstance(value, int):
-            raise TypeError("gid must be an int")
-
-        if not GID_MIN <= value <= GID_MAX:
-            raise ValueError(
-                f"gid must be between {GID_MIN} and {GID_MAX}, inclusive: "
-                f"{value}")
-
-        self._gid = value
 
     @property
     def real_name(self) -> str:
@@ -236,37 +191,12 @@ class User(): # pylint: disable=W0201
         self._shell = value
 
     @property
-    def password(self) -> Optional[str]:
-        """
-        The hashed password of the user.
-        """
-        return self._password
-
-    @password.setter
-    def password(self, value: Optional[str]) -> None:
-        if value is None:
-            self._password = None
-            return
-
-        if not isinstance(value, str):
-            raise TypeError("password must be a string")
-
-        if not value:
-            raise TypeError("password cannot be empty")
-
-        if ":" in value or "\n" in value:
-            raise TypeError("password contains illegal characters")
-
-        self._password = value
-        return
-
-    @property
     def as_tuple(self) -> UserTuple:
         """
         The user represented as an immutable tuple object.
         """
         return UserTuple(
-            user_name=self.user_name,
+            name=self.name,
             uid=self.uid,
             gid=self.gid,
             real_name=self.real_name,
@@ -333,21 +263,15 @@ class User(): # pylint: disable=W0201
         Update the user from a given DynamoDB item. If an attribute has been
         modified, the modified flag is set to true.
 
-        The user_name field cannot be updated.
+        The name field cannot be updated.
 
         The return value is the value of the modified flag.
         """
-        if self.user_name != item["UserName"]["S"]:
-            raise ValueError("Cannot update user_name")
+        super(User, self).update_from_dynamodb_item(item)
 
         uid = item["UID"]["N"]
         if self.uid != uid:
             self.uid = uid
-            self.modified = True
-
-        gid = item["GID"]["N"]
-        if self.gid != gid:
-            self.gid = gid
             self.modified = True
 
         real_name = item["RealName"]["S"]
@@ -363,11 +287,6 @@ class User(): # pylint: disable=W0201
         shell = item["Shell"]["S"]
         if self.shell != shell:
             self.shell = shell
-            self.modified = True
-
-        password = item.get("Password", {}).get("S")
-        if self.password != password:
-            self.password = password
             self.modified = True
 
         last_password_change_date = User.date_from_string(
@@ -412,7 +331,7 @@ class User(): # pylint: disable=W0201
         automatically set to true.
         """
         return cls(
-            user_name=item["UserName"]["S"],
+            name=item["Name"]["S"],
             uid=item["UID"]["N"],
             gid=item["GID"]["N"],
             real_name=item["RealName"]["S"],

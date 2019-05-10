@@ -3,6 +3,7 @@ Daemon for keeping users in-sync with the DynamoDB table.
 """
 from logging import getLogger
 from typing import Dict, Set
+import botocore # pylint: disable=W0611
 from .group import Group
 from .shadow import ShadowDatabase
 from .user import User
