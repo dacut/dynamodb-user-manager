@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+"""
+Miscellanous utilities for dynamodb-user-manager
+"""
+
 from functools import lru_cache
 from os import environ
 import requests
@@ -32,5 +35,5 @@ def get_region():
         region = az[:-1]
     if not region:
         region = "us-gov-west-1"
-    
+
     return region

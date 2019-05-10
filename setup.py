@@ -1,1 +1,16 @@
 #!/usr/bin/env python3
+from setuptools import setup
+
+setup(
+    name="DynamoDBUserManager",
+    description="Manage the local user database from DynamoDB",
+    version="0.1",
+    packages=["dynamodbusermanager"],
+    install_requires=["boto3>=1.9"],
+    tests_require=["coverage>=4.5.3", "moto>=1.3.8", "mypy>=0.701", "nose>=1.3.7", "pylint>=2.3.1"],
+    python_requires=">=3.6",
+    author="David Cuthbert",
+    author_email="cuthbert@amazon.com",
+    license="Apache-2.0",
+    url="https://github.com/aws-proserve-cms/dynamodb-user-manager",
+)

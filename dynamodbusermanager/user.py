@@ -1,321 +1,430 @@
 """
 Class for manipulating user information.
 """
-from os import geteuid, seteuid
-from re import compile as re_compile
-from subprocess import run, CalledProcessError
-from typing import Collection, Optional, List, Set, Tuple, Union
+from datetime import date, timedelta
+from functools import total_ordering
+from typing import Any, Dict, Optional, NamedTuple, Type, TypeVar
 
-UID_MIN = 1
-UID_MAX = 0xffffffff
-GID_MIN = 1
-GID_MAX = 0xffffffff
+from .constants import (
+    EPOCH, FIELD_PATTERN, GID_MIN, GID_MAX, NAME_MAX_LENGTH, NAME_PATTERN,
+    REAL_NAME_MAX_LENGTH, UID_MIN, UID_MAX
+)
 
-USERADD = b"/usr/sbin/useradd"
-USERDEL = b"/usr/sbin/userdel"
-USERMOD = b"/usr/sbin/usermod"
+class UserTuple(NamedTuple):
+    """
+    UserTuple(NamedTuple)
+    Holds the data for a User object in an immutable format.
+    """
+    user_name: str
+    uid: int
+    gid: int
+    real_name: str
+    home: str
+    shell: str
+    password: Optional[str]
+    last_password_change_date: Optional[date]
+    password_age_min_days: Optional[int]
+    password_age_max_days: Optional[int]
+    password_warn_days: Optional[int]
+    password_disable_days: Optional[int]
+    account_expire_date: Optional[date]
+    modified: bool
 
-# /usr/include/bits/local_lim.h
-LOGIN_NAME_MAX = 256
+U = TypeVar("U", bound="User")  # pylint: disable=C0103
 
-# Usernames are not well-defined, but we limit them to the POSIX 3.437 rules to
-# avoid compatibility problems.
-# http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_437
-# Which limit them to the portable filename character set:
-# http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
-# ASCII letters, digits, period, underscore, hyphen. The hyphen cannot be the
-# first character of the username.
-USERNAME_PATTERN = re_compile(r"^[a-zA-Z0-9_\.][-a-zA-Z0-9_\.]*$")
+@total_ordering
+class User(): # pylint: disable=W0201
+    """
+    User object for holding data about a single user entry in the /etc/passwd
+    and /etc/shadow files.
+    """
 
-# There's no real limit on what can go into real names (GECOS/comment fields)
-# except colons (\x3a) and newlines are forbidden. We also disallow vertical
-# tabs, form feeds, and NULs, but otherwise allow the entire Unicode character
-# set.
-REAL_NAME_PATTERN = re_compile(r"^[^:\n\v\f\0]*$")
-
-# There's no defined limit on the GECOS field, but 512 is a common buffer
-# size for the entire passwd line. Given that we allow 256 characters for
-# the username, we limit the real name to 128 bytes
-REAL_NAME_MAX = 128
-
-# Filenames can have anything except colons. We require them to be absolute
-# paths and not have redundant or trailing slashes.
-FILENAME_PATTERN = re_compile(r"^(/[^:/]+)+|/$")
-
-class User(object):
-    def __init__(self, username: str, real_name: str, uid: int,
-                 groups: Collection[str], home_dir: str, shell: str,
-                 password: Optional[str] = None,
-                 ) -> None:
+    def __init__(
+            self,
+            user_name: str,
+            uid: int,
+            gid: int,
+            real_name: str,
+            home: str,
+            shell: str,
+            password: Optional[str] = None,
+            last_password_change_date: Optional[date] = None,
+            password_age_min_days: Optional[int] = None,
+            password_age_max_days: Optional[int] = None,
+            password_warn_days: Optional[int] = None,
+            password_disable_days: Optional[int] = None,
+            account_expire_date: Optional[date] = None,
+            modified: bool = False) -> None:
         """
-        User(username: str, real_name: str, uid: int, groups: Collection[str],
-             home_dir: str, shell: str, password: Optional[str] = None) -> User
+        User(
+            user_name: str,
+            uid: int,
+            gid: int,
+            real_name: str,
+            home: str,
+            shell: str,
+            password: Optional[str] = None,
+            last_password_change_date: Optional[date] = None,
+            password_age_min_days: Optional[int] = None,
+            password_age_max_days: Optional[int] = None
+            password_warn_days: Optional[int] = None,
+            password_disable_days: Optional[int] = None,
+            account_expire_date: Optional[date] = None,
+            modified: bool = False) -> User
         Create a new User object.
         """
         super(User, self).__init__()
-        self.username = username
-        self.real_name = real_name
+        self.user_name = user_name
         self.uid = uid
-        self.groups = groups
-        self.home_dir = home_dir
+        self.gid = gid
+        self.real_name = real_name
+        self.home = home
         self.shell = shell
         self.password = password
-        return
-    
+        self.last_password_change_date = last_password_change_date
+        self.password_age_min_days = password_age_min_days
+        self.password_age_max_days = password_age_max_days
+        self.password_warn_days = password_warn_days
+        self.password_disable_days = password_disable_days
+        self.account_expire_date = account_expire_date
+        self.modified = modified
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, User):
+            return False
+
+        return self.as_tuple == other.as_tuple
+
+    def __ne__(self, other: Any) -> bool:
+        if not isinstance(other, User):
+            return True
+
+        return self.as_tuple != other.as_tuple
+
+    def __lt__(self, other: "User") -> bool:
+        if not isinstance(other, User):
+            raise TypeError(
+                f"'<' not supported between instances of "
+                f"{type(self).__name__!r} and {type(other).__name__!r}")
+
+        return self.as_tuple < other.as_tuple
+
     @property
-    def username(self) -> str:
-        return self._username
-    
-    @username.setter
-    def username(self, value: str) -> None:
+    def user_name(self) -> str:
+        """
+        The login name of the user.
+        """
+        return self._user_name
+
+    @user_name.setter
+    def user_name(self, value: str) -> None:
         if not isinstance(value, str):
-            raise TypeError("username must be a string")
-        elif len(value) == 0:
-            raise ValueError("username cannot be empty")
-        elif len(value) > LOGIN_NAME_MAX:
+            raise TypeError("user_name must be a string")
+        if not value:
+            raise ValueError("user_name cannot be empty")
+        if len(value) > NAME_MAX_LENGTH:
             raise ValueError(
-                f"username cannot be longer than {LOGIN_NAME_MAX} characters")
-        elif not USERNAME_PATTERN.match(value):
-            raise ValueError("username contains illegal characters")
-        
-        self._username = value
-    
+                f"user_name cannot be longer than {NAME_MAX_LENGTH} characters")
+        if not NAME_PATTERN.match(value):
+            raise ValueError("user_name contains illegal characters")
+
+        self._user_name = value
+
+    @property
+    def uid(self) -> int:
+        """
+        The integer user id of the user.
+        """
+        return self._uid
+
+    @uid.setter
+    def uid(self, value: int) -> None:
+        if not isinstance(value, int):
+            raise TypeError("uid must be an int")
+
+        if not UID_MIN <= value <= UID_MAX:
+            raise ValueError(
+                f"uid must be between {UID_MIN} and {UID_MAX}, inclusive: "
+                f"{value}")
+
+        self._uid = value
+
+    @property
+    def gid(self) -> int:
+        """
+        The integer initial group id of the user.
+        """
+        return self._gid
+
+    @gid.setter
+    def gid(self, value: int) -> None:
+        if not isinstance(value, int):
+            raise TypeError("gid must be an int")
+
+        if not GID_MIN <= value <= GID_MAX:
+            raise ValueError(
+                f"gid must be between {GID_MIN} and {GID_MAX}, inclusive: "
+                f"{value}")
+
+        self._gid = value
+
     @property
     def real_name(self) -> str:
+        """
+        The real name of the user.
+        This _may_ be a comma-delimited list of values containing the following
+        fields:
+            * The user's full name
+            * The building and room number
+            * Office telephone number
+            * Home telephone number
+            * Other contact information
+        """
         return self._real_name
-    
+
     @real_name.setter
     def real_name(self, value: Optional[str]) -> None:
         if value is None:
             self._real_name = ""
             return
-        
+
         if not isinstance(value, str):
             raise TypeError("real_name must be a string or None")
-        elif not REAL_NAME_PATTERN.match(value):
+        if not FIELD_PATTERN.match(value):
             raise ValueError("real_name contains illegal characters")
-        elif len(value.encode("utf-8")) > REAL_NAME_MAX:
+        if len(value.encode("utf-8")) > REAL_NAME_MAX_LENGTH:
             raise ValueError(
-                f"real_name is longer than {REAL_NAME_MAX} bytes (UTF-8 encoded)")
-        
+                f"real_name is longer than {REAL_NAME_MAX_LENGTH} bytes "
+                f"(UTF-8 encoded)")
+
         self._real_name = value
-        return
 
     @property
-    def uid(self) -> str:
-        return self._uid
-    
-    @uid.setter
-    def uid(self, value: int) -> None:
-        if not isinstance(value, int):
-            raise TypeError("uid must be an int")
-        
-        if not UID_MIN <= value <= UID_MAX:
-            raise ValueError(
-                f"uid must be between {UID_MIN} and {UID_MAX}, inclusive: "
-                f"{value}")
-        
-        self._uid = value
-    
-    @property
-    def groups(self) -> Set[str]:
-        return set(self._groups)
-    
-    @groups.setter
-    def groups(self, value: Union[List[str],Set[str],Tuple[str]]) -> None:
-        if (not isinstance(value, (list, set, tuple)) or
-            not all([isinstance(el, str) for el in value])):
-            raise TypeError("groups must be a list, set, or tuple of strings")
-        
-        for group in value:
-            if not group:
-                raise ValueError("group names cannot be empty")
+    def home(self) -> str:
+        """
+        The home directory of the user.
+        """
+        return self._home
 
-            if not USERNAME_PATTERN.match(group):
-                raise ValueError(f"group contains illegal characters: {group}")
-            
-        self._groups = set(value)
-        return
-    
-    @property
-    def home_dir(self) -> str:
-        return self._home_dir
-    
-    @home_dir.setter
-    def home_dir(self, value: str) -> None:
+    @home.setter
+    def home(self, value: str) -> None:
         if not isinstance(value, str):
-            raise TypeError("home_dir must be a string")
-        
-        if not FILENAME_PATTERN.match(value):
-            raise ValueError(
-                "home_dir is not an absolute path or contains doubled or "
-                f"trailing slashes: {value}")
-        
-        self._home_dir = value
-        return
+            raise TypeError("home must be a string")
+
+        if not FIELD_PATTERN.match(value):
+            raise TypeError("home contains illegal characters")
+
+        self._home = value
 
     @property
     def shell(self) -> str:
+        """
+        The login shell of the user.
+        """
         return self._shell
-    
+
     @shell.setter
     def shell(self, value: str) -> None:
         if not isinstance(value, str):
             raise TypeError("shell must be a string")
-        
-        if not FILENAME_PATTERN.match(value):
+
+        if not FIELD_PATTERN.match(value):
             raise ValueError(
                 "shell is not an absolute path or contains doubled or "
                 f"trailing slashes: {value}")
-        
+
         self._shell = value
-        return
-    
+
     @property
     def password(self) -> Optional[str]:
+        """
+        The hashed password of the user.
+        """
         return self._password
-    
+
     @password.setter
     def password(self, value: Optional[str]) -> None:
         if value is None:
             self._password = None
             return
-        
+
         if not isinstance(value, str):
             raise TypeError("password must be a string")
-        
+
         if not value:
             raise TypeError("password cannot be empty")
-        
+
         if ":" in value or "\n" in value:
             raise TypeError("password contains illegal characters")
-        
+
         self._password = value
         return
 
-    def create(self, allow_duplicate_uid: bool = False) -> None:
+    @property
+    def as_tuple(self) -> UserTuple:
         """
-        user.create(allow_duplicate_uid: bool = False) -> None
-        Create the user.
+        The user represented as an immutable tuple object.
         """
-        cmd = [
-            USERADD, b"--comment", self.real_name.encode("utf-8"),
-            b"--home-dir", self.home_dir.encode("utf-8"),
-            b"--create-home", b"--shell", self.shell.encode("utf-8"),
-            b"--uid", b"%d" % self.uid, b"--user-group"
-        ]
+        return UserTuple(
+            user_name=self.user_name,
+            uid=self.uid,
+            gid=self.gid,
+            real_name=self.real_name,
+            home=self.home,
+            shell=self.shell,
+            password=self.password,
+            last_password_change_date=self.last_password_change_date,
+            password_age_min_days=self.password_age_min_days,
+            password_age_max_days=self.password_age_max_days,
+            password_warn_days=self.password_warn_days,
+            password_disable_days=self.password_disable_days,
+            account_expire_date=self.account_expire_date,
+            modified=self.modified,
+        )
 
-        if allow_duplicate_uid:
-            cmd += [b"--non-unique"]
+    def __repr__(self):
+        return repr(self.as_tuple)
 
-        if self.password:
-            cmd += [b"--password", self.password.encode("utf-8")]
-
-        if self.groups:
-            cmd += [b"--groups", ",".join(self.groups).encode("utf-8")]
-        
-        cmd.append(self.username.encode("utf-8"))
-
-        euid = geteuid()
-        if euid != 0:
-            seteuid(0)
-        try:
-            cp = run(cmd, capture_output=True, encoding="utf-8")
-        finally:
-            if euid != 0:
-                seteuid(euid)
-
-        if cp.returncode == 1:
-            raise RuntimeError("Failed to update passwd file")
-        elif cp.returncode == 2 or cp.returncode == 3:
-            raise RuntimeError(f"Internal failure: Invalid invocation of useradd: {cp.stderr.strip()}")
-        elif cp.returncode == 4:
-            raise ValueError(f"Duplicate UID: {self.uid}")
-        elif cp.returncode == 5:
-            raise ValueError("Group(s) do not exist")
-        elif cp.returncode == 9:
-            raise ValueError(f"Username already in use: {self.username}")
-        elif cp.returncode == 10:
-            raise RuntimeError("Failed to update group file")
-        elif cp.returncode == 12:
-            raise RuntimeError("Failed to create home directory")
-        elif cp.returncode != 0:
-            raise RuntimeError(f"Unknown useradd failure ({cp.returncode}): {cp.stderr.strip()}")
-        
-        return
-    
-    def delete(self) -> None:
+    @staticmethod
+    def date_from_days(days: Optional[int]) -> Optional[date]:
         """
-        user.delete() -> None
-        Delete the user.
-        """
-        cmd = [USERDEL, self.username.encode("utf-8")]
+        User.date_from_days(days: Optional[int]) -> Optional[date]
+        Convert a count of days-from-epoch to an optional date field.
+        If days is negative or None, the result is None.
 
-        euid = geteuid()
-        if euid != 0:
-            seteuid(0)
-        try:
-            cp = run(cmd, capture_output=True, encoding="utf-8")
-        finally:
-            if euid != 0:
-                seteuid(euid)
-        
-        if cp.returncode == 1:
-            raise RuntimeError("Failed to update passwd file")
-        elif cp.returncode == 2 or cp.returncode == 3:
-            raise RuntimeError(f"Internal failure: Invalid invocation of userdel: {cp.stderr.strip()}")
-        elif cp.returncode == 6:
-            raise ValueError("User does not exist")
-        elif cp.returncode == 8:
-            raise ValueError("User is currently logged in")
-        elif cp.returncode == 10:
-            raise RuntimeError("Failed to update group file")
-        elif cp.returncode == 12:
-            raise RuntimeError("Failed to remove home directory")
-        elif cp.returncode != 0:
-            raise RuntimeError(f"Unknown userdel failure ({cp.returncode}): {cp.stderr.strip()}")
-        
-        return
-
-    def update(self) -> None:
+        This standardizes negative values returned by the Python spwd library
+        to None values.
         """
-        user.update() -> None
-        Update the user.
-        """
-        cmd = [
-            USERMOD, b"--comment", self.real_name.encode("utf-8"),
-            b"--home", self.home_dir.encode("utf-8"),
-            b"--shell", self.shell.encode("utf-8"),
-            b"--groups", ",".join(self.groups).encode("utf-8"),
-            b"--uid", b"%d" % self.uid, self.username.encode("utf-8")
-        ]
+        if days is None or days < 0:
+            return None
 
-        euid = geteuid()
-        if euid != 0:
-            seteuid(0)
-        try:
-            cp = run(cmd, capture_output=True, encoding="utf-8")
-        finally:
-            if euid != 0:
-                seteuid(euid)
-        
-        if cp.returncode == 1:
-            raise RuntimeError("Failed to update passwd file")
-        elif cp.returncode == 2 or cp.returncode == 3:
-            raise RuntimeError(f"Internal failure: Invalid invocation of usermod: {cp.stderr.strip()}")
-        elif cp.returncode == 4:
-            raise ValueError(f"Duplicate UID: {self.uid}")
-        elif cp.returncode == 6:
-            raise ValueError("User/group does not exist")
-        elif cp.returncode == 8:
-            raise ValueError("User is currently logged in")
-        elif cp.returncode == 9:
-            raise ValueError("Username is already in use")
-        elif cp.returncode == 10:
-            raise RuntimeError("Failed to update group file")
-        elif cp.returncode == 12:
-            raise RuntimeError("Failed to move home directory")
-        elif cp.returncode != 0:
-            raise RuntimeError(f"Unknown usermod failure ({cp.returncode}): {cp.stderr.strip()}")
-        
-        return
+        return EPOCH + timedelta(days=days)
+
+    @staticmethod
+    def age_from_days(days: int) -> Optional[int]:
+        """
+        User.age_from_days(days: Optional[int]) -> Optional[int]
+        Convert an age in days to an optional age field.
+        If days is negative or None, the result is None.
+
+        This standardizes negative values returned by the Python spwd library
+        to None values.
+        """
+        if days is None or days < 0:
+            return None
+
+        return days
+
+    @staticmethod
+    def date_from_string(s: Optional[str]) -> Optional[date]:
+        """
+        User.date_from_string(s: Optional[str]) -> Optional[date]
+        Convert a string date in YYYY-MM-DD form to a date object. If s is
+        None, this returns None.
+        """
+        if s is None:
+            return None
+
+        return date.fromisoformat(s)
+
+    def update_from_dynamodb_item(self, item: Dict[str, Any]) -> bool:
+        """
+        user.update_from_dynamodb_item(item: Dict[str, Any]) -> bool
+        Update the user from a given DynamoDB item. If an attribute has been
+        modified, the modified flag is set to true.
+
+        The user_name field cannot be updated.
+
+        The return value is the value of the modified flag.
+        """
+        if self.user_name != item["UserName"]["S"]:
+            raise ValueError("Cannot update user_name")
+
+        uid = item["UID"]["N"]
+        if self.uid != uid:
+            self.uid = uid
+            self.modified = True
+
+        gid = item["GID"]["N"]
+        if self.gid != gid:
+            self.gid = gid
+            self.modified = True
+
+        real_name = item["RealName"]["S"]
+        if self.real_name != real_name:
+            self.real_name = real_name
+            self.modified = True
+
+        home = item["Home"]["S"]
+        if self.home != home:
+            self.home = home
+            self.modified = True
+
+        shell = item["Shell"]["S"]
+        if self.shell != shell:
+            self.shell = shell
+            self.modified = True
+
+        password = item.get("Password", {}).get("S")
+        if self.password != password:
+            self.password = password
+            self.modified = True
+
+        last_password_change_date = User.date_from_string(
+            item.get("LastPasswordChangeDate", {}).get("S"))
+        if self.last_password_change_date != last_password_change_date:
+            self.last_password_change_date = last_password_change_date
+            self.modified = True
+
+        password_age_min_days = item.get("PasswordAgeMinDays", {}).get("N")
+        if self.password_age_min_days != password_age_min_days:
+            self.password_age_min_days = password_age_min_days
+            self.modified = True
+
+        password_age_max_days = item.get("PasswordAgeMaxDays", {}).get("N")
+        if self.password_age_max_days != password_age_max_days:
+            self.password_age_max_days = password_age_max_days
+            self.modified = True
+
+        password_warn_days = item.get("PasswordWarnDays", {}).get("N")
+        if self.password_warn_days != password_warn_days:
+            self.password_warn_days = password_warn_days
+            self.modified = True
+
+        password_disable_days = item.get("PasswordDisableDays", {}).get("N")
+        if self.password_disable_days != password_disable_days:
+            self.password_disable_days = password_disable_days
+            self.modified = True
+
+        account_expire_date = User.date_from_string(
+            item.get("AccountExpireDate", {}).get("S"))
+        if self.account_expire_date != account_expire_date:
+            self.account_expire_date = account_expire_date
+            self.modified = True
+
+        return self.modified
+
+    @classmethod
+    def from_dynamodb_item(cls: Type[U], item: Dict[str, Any]) -> U:
+        """
+        User.from_dynamodb_item(item: Dict[str, Any]) -> User
+        Create a user from a given DynamoDB item. The modified flag is
+        automatically set to true.
+        """
+        return cls(
+            user_name=item["UserName"]["S"],
+            uid=item["UID"]["N"],
+            gid=item["GID"]["N"],
+            real_name=item["RealName"]["S"],
+            home=item["Home"]["S"],
+            shell=item["Shell"]["S"],
+            password=item.get("Password", {}).get("S"),
+            last_password_change_date=User.date_from_string(
+                item.get("LastPasswordChangeDate", {}).get("S")),
+            password_age_min_days=item.get("PasswordAgeMinDays", {}).get("N"),
+            password_age_max_days=item.get("PasswordAgeMaxDays", {}).get("N"),
+            password_warn_days=item.get("PasswordWarnDays", {}).get("N"),
+            password_disable_days=item.get("PasswordDisableDays", {}).get("N"),
+            account_expire_date=User.date_from_string(
+                item.get("AccountExpireDate", {}).get("S")),
+            modified=True)
