@@ -351,13 +351,11 @@ class ShadowDatabase():
                 # password_warn_days:password_disable_days:account_expire_date:
                 # flags(unused)
                 if not (8 <= len(parts) <= 9):
-                    log.warning("Invalid shadow entry (line %d): %s",
-                    line_no + 1, line)
+                    log.warning("Invalid shadow entry (line %d)", line_no)
                     continue
 
                 user_name = parts[0]
                 password = parts[1]
-
 
                 (user_name, password, last_password_change_date,
                  password_age_min_days, password_age_max_days,
