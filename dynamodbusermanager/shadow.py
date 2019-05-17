@@ -15,7 +15,8 @@ from os import (
 )
 from os.path import exists
 from time import sleep, time
-from typing import Callable, Dict, List, Optional, Set, TextIO, Tuple, Union
+from typing import (
+    Any, Callable, Dict, List, Optional, Set, TextIO, Tuple, Union)
 from .constants import (
     EPOCH, FIELD_FIX, FIELD_PATTERN, GID_MIN, GID_MAX, GROUP_FILE, GSHADOW_FILE,
     LOCK_ALL, LOCK_GROUP, LOCK_GSHADOW, LOCK_PASSWD, LOCK_SHADOW, NAME_PATTERN,
@@ -34,7 +35,7 @@ class ShadowDatabase():
     /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: Dict[str, Any] = None) -> None:
         """
         ShadowDatabase() -> ShadowDatabase
         Create a new shadow database object, initialized from the shadow
@@ -43,6 +44,7 @@ class ShadowDatabase():
         super(ShadowDatabase, self).__init__()
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
+        self.config = {} if config is None else dict(config) # type:
         self.reload()
 
     def reload(self) -> None:
@@ -349,7 +351,8 @@ class ShadowDatabase():
                 # password_warn_days:password_disable_days:account_expire_date:
                 # flags(unused)
                 if not (8 <= len(parts) <= 9):
-                    log.warning("Invalid shadow entry (line %d)", line_no + 1)
+                    log.warning("Invalid shadow entry (line %d): %s",
+                    line_no + 1, line)
                     continue
 
                 user_name = parts[0]
@@ -471,10 +474,9 @@ class ShadowDatabase():
                 self._write_group(group, gfd, gsfd)
                 group.modified = False
 
-    @staticmethod
-    def _write_user(user: User, passwd: TextIO, shadow: TextIO) -> None:
+    def _write_user(self, user: User, passwd: TextIO, shadow: TextIO) -> None:
         """
-        ShadowDatabase.write_user(
+        shadowdb.write_user(
             user: User, passwd: TextIO, shadow: TextIO) -> None
         Write the specified user out to the passwd+ and shadow+ files.
         """
@@ -504,13 +506,17 @@ class ShadowDatabase():
         warn_days_str = (
             str(user.password_warn_days)
             if user.password_warn_days is not None else "")
+        disable_days_str = (
+            str(user.password_disable_days)
+            if user.password_disable_days is not None else "")
         expire_days_str = (
             str((user.account_expire_date - EPOCH).days)
             if user.account_expire_date is not None else "")
 
         shadow.write(
             f"{name}:{password}:{change_days_str}:{age_min_str}:"
-            f"{age_max_str}:{warn_days_str}:{expire_days_str}:\n")
+            f"{age_max_str}:{warn_days_str}:{disable_days_str}:"
+            f"{expire_days_str}:\n")
 
     @staticmethod
     def _write_group(group: Group, gfile: TextIO, gshadow: TextIO) -> None:
