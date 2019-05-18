@@ -42,6 +42,10 @@ LOCK_GSHADOW = 4
 LOCK_SHADOW = 8
 LOCK_ALL = (LOCK_PASSWD | LOCK_GROUP | LOCK_GSHADOW | LOCK_SHADOW)
 
+# Pattern for splitting key/value pairs of the login.defs file
+LOGIN_DEFS_PATTERN = re_compile(r"(?P<key>[-A-Za-z0-9_]+)\s+(?P<value>.*)")
+
+LOGIN_DEFS_FILE = "/etc/login.defs"
 PASSWD_FILE = "/etc/passwd"
 GROUP_FILE = "/etc/group"
 GSHADOW_FILE = "/etc/gshadow"

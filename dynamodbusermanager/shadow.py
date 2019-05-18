@@ -5,25 +5,27 @@ files.
 from ctypes import CDLL, c_int, get_errno
 from datetime import timedelta
 from errno import EAGAIN, EEXIST, EIO, EINVAL, ESRCH
-from fcntl import lockf, LOCK_EX
+from fcntl import lockf, LOCK_EX, LOCK_SH, LOCK_UN
 from functools import partial
 from logging import getLogger
 from os import (
-    close as os_close, fsync, getpid, kill, link, open as os_open, rename,
-    stat, strerror, unlink,
-    O_CLOEXEC, O_CREAT, O_TRUNC, O_WRONLY
-)
+    chmod, close as os_close, fsync, getpid, kill, link,
+    open as os_open, rename, stat, strerror, unlink,
+    O_CLOEXEC, O_CREAT, O_TRUNC, O_WRONLY, O_RDWR)
 from os.path import exists
+from stat import S_IMODE
 from time import sleep, time
 from typing import (
     Any, Callable, Dict, List, Optional, Set, TextIO, Tuple, Union)
 from .constants import (
     EPOCH, FIELD_FIX, FIELD_PATTERN, GID_MIN, GID_MAX, GROUP_FILE, GSHADOW_FILE,
-    LOCK_ALL, LOCK_GROUP, LOCK_GSHADOW, LOCK_PASSWD, LOCK_SHADOW, NAME_PATTERN,
-    NAME_MAX_LENGTH, NUMERIC_FIELD_PATTERN, PASSWD_FILE, SHADOW_FILE,
-    UID_MIN, UID_MAX)
+    LOCK_ALL, LOCK_GROUP, LOCK_GSHADOW, LOCK_PASSWD, LOCK_SHADOW,
+    LOGIN_DEFS_FILE, LOGIN_DEFS_PATTERN, NAME_PATTERN, NAME_MAX_LENGTH,
+    NUMERIC_FIELD_PATTERN, PASSWD_FILE, SHADOW_FILE, UID_MIN, UID_MAX)
 from .group import Group
 from .user import User
+from .utils import (
+    ChangeEffectiveId, ensure_user_owns_dir, ensure_user_owns_file, parse_bool)
 
 # pylint: disable=C0103,C0325
 
@@ -34,32 +36,106 @@ class ShadowDatabase():
     State manager and rules for manipulating the user and group database files:
     /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow.
     """
+    login_defs_converters = {
+        "CHFN_AUTH": parse_bool,
+        "CHFN_RESTRICT": str,
+        "CHSH_AUTH": parse_bool,
+        "CONSOLE": str,
+        "CONSOLE_GROUPS": str,
+        "CREATE_HOME": parse_bool,
+        "DEFAULT_HOME": parse_bool,
+        "ENCRYPT_METHOD": str,
+        "ENV_HZ": str,
+        "ENV_PATH": str,
+        "ENV_SUPATH": str,
+        "ENV_TZ": str,
+        "ENVIRON_FILE": str,
+        "ERASECHAR": int,
+        "FAIL_DELAY": int,
+        "FAILLOG_ENAB": parse_bool,
+        "FAKE_SHELL": str,
+        "FTMP_FILE": str,
+        "GID_MAX": int,
+        "GID_MIN": int,
+        "HUSHLOGIN_FILE": str,
+        "ISSUE_FILE": str,
+        "KILLCHAR": int,
+        "LASTLOG_ENAB": parse_bool,
+        "LOG_OK_LOGINS": parse_bool,
+        "LOG_UNKFAIL_ENAB": parse_bool,
+        "LOGIN_RETRIES": int,
+        "LOGIN_STRING": str,
+        "LOGIN_TIMEOUT": int,
+        "MAIL_CHECK_ENAB": parse_bool,
+        "MAIL_DIR": str,
+        "MAIL_FILE": str,
+        "MAX_MEMBERS_PER_GROUP": int,
+        "MD5_CRYPT_ENAB": parse_bool,
+        "MOTD_FILE": str,
+        "NOLOGINS_FILE": str,
+        "OBSCURE_CHECKS_ENAB": parse_bool,
+        "PASS_ALWAYS_WARN": parse_bool,
+        "PASS_CHANGE_TRIES": int,
+        "PASS_MAX_DAYS": int,
+        "PASS_MIN_DAYS": int,
+        "PASS_WARN_AGE": int,
+        "PASS_MAX_LEN": int,
+        "PASS_MIN_LEN": int,
+        "PORTTIME_CHECKS_ENAB": parse_bool,
+        "QUOTAS_ENAB": parse_bool,
+        "SHA_CRYPT_MIN_ROUNDS": int,
+        "SHA_CRYPT_MAX_ROUNDS": int,
+        "SULOG_FILE": str,
+        "SU_NAME": str,
+        "SU_WHEEL_ONLY": parse_bool,
+        "SYS_GID_MAX": int,
+        "SYS_GID_MIN": int,
+        "SYS_UID_MAX": int,
+        "SYS_UID_MIN": int,
+        "SYSLOG_SG_ENAB": parse_bool,
+        "SYSLOG_SU_ENAB": parse_bool,
+        "TTYGROUP": str,
+        "TTYPERM": str,
+        "TTYTYPE_FILE": str,
+        "UID_MAX": int,
+        "UID_MIN": int,
+        "ULIMIT": int,
+        "UMASK": int,
+        "USERDEL_CMD": str,
+        "USERGROUPS_ENAB": parse_bool,
+    }
 
-    def __init__(self, config: Dict[str, Any] = None) -> None:
+    def __init__(self) -> None:
         """
         ShadowDatabase() -> ShadowDatabase
         Create a new shadow database object, initialized from the shadow
         database files.
         """
         super(ShadowDatabase, self).__init__()
+        self.confi = {}     # type: Dict[str, Any]
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
-        self.config = {} if config is None else dict(config) # type:
         self.reload()
 
     def reload(self) -> None:
         """
         shadow_db.reload() -> None
-        Reload users and groups from the shadow database files.
+        Reload configuration from /etc/login.defs, and users and groups from
+        the shadow database files.
         """
+        self.config = {}    # type: Dict[str, Any]
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
+
+        self._load_login_defs()
 
         with ShadowDatabaseLock(timeout=15):
             self._load_passwd_file()
             self._load_group_file()
             self._load_gshadow_file()
             self._load_shadow_file()
+
+        self._load_ssh_public_keys()
 
     def write(self) -> None:
         """
@@ -85,6 +161,31 @@ class ShadowDatabase():
                 return True
 
         return False
+
+    def _load_login_defs(self) -> None:
+        """
+        shadow_db._load_login_defs() -> None
+        Load the /etc/login.defs file and populate self.config.
+        """
+        with open(LOGIN_DEFS_FILE, "r") as fd:
+            for line in fd:
+                line = line.strip()
+                m = LOGIN_DEFS_PATTERN.match(line)
+                if not m:
+                    continue
+
+                key = m.group("key")
+                value = m.group("value")
+
+                conv = self.login_defs_converters.get(key)
+                if conv:
+                    try:
+                        value = conv(value)
+                    except Exception as e:
+                        log.error(
+                            "Failed to convert login.defs %r=%r: %s", key,
+                            value, e)
+                self.config[key] = value
 
     def _load_passwd_file(self) -> None:
         """
@@ -394,6 +495,18 @@ class ShadowDatabase():
                 self._parse_shadow_date_field(
                     user, account_expire_date, "account_expire_date", line_no)
 
+    def _load_ssh_public_keys(self) -> None:
+        """
+        shadowdb._load_ssh_public_keys() -> None
+        Load the SSH public keys for each user.
+        """
+        for user in self.users.values():
+            # By default, the user does not have an ssh_public_key.
+            auth_keys = user.authorized_keys
+            if user.ssh_public_keys != auth_keys:
+                user.ssh_public_keys = auth_keys
+                user.modified = True
+
     @staticmethod
     def _parse_shadow_date_field(user: User, value: str, name: str, line_no: int) -> None:
         """
@@ -476,7 +589,8 @@ class ShadowDatabase():
         """
         shadowdb.write_user(
             user: User, passwd: TextIO, shadow: TextIO) -> None
-        Write the specified user out to the passwd+ and shadow+ files.
+        Write the specified user out to the passwd+ and shadow+ files, and
+        to the user's ~/.ssh/authorized_keys file.
         """
         name = user.name
         # passwd format is 7 parts:
@@ -515,6 +629,68 @@ class ShadowDatabase():
             f"{name}:{password}:{change_days_str}:{age_min_str}:"
             f"{age_max_str}:{warn_days_str}:{disable_days_str}:"
             f"{expire_days_str}:\n")
+
+    def create_user_home(self, user: User) -> None:
+        """
+        shadowdb.create_user_home(user: User) -> None
+        Create the home directory for the user if it does not already exist.
+        """
+        home = user.home
+        home_mask = self.config.get("UMASK", 0o022)
+        home_mode = 0o777 & ~home_mask
+
+        if not home:
+            log.warning(
+                "User %s does not have a home directory set", user.name)
+        else:
+            ensure_user_owns_dir(user.uid, user.gid, home, home_mode)
+
+    def write_user_ssh_keys(self, user: User) -> None:
+        """
+        shadowdb.write_user_ssh_keys(user: User) -> None
+        Write the user's ssh public keys to their ~/.ssh/authorized_keys file,
+        ensuring that ~/.ssh and ~/.ssh/authorized_keys exist, are owned by
+        the user, and are only writable by the user.
+
+        This does not re-write the file if it already has the correct contents.
+        """
+        mask = self.config.get("UMASK", 0o022)
+        mode = 0o777 & ~mask
+
+        if not user.home:
+            log.warning(
+                "User %s does not have a home directory -- unable to write "
+                "public keys.", user.name)
+            return
+
+        if not exists(user.home):
+            log.warning(
+                "User %s home directory %s does not exist", user.name,
+                user.home)
+            return
+
+        ssh_dir = user.home + "/.ssh"
+        auth_keys_file = ssh_dir + "/authorized_keys"
+        auth_keys = "\n".join(sorted(user.ssh_public_keys))
+        ensure_user_owns_dir(user.uid, user.gid, ssh_dir, mode, 0o722)
+        ensure_user_owns_file(user.uid, auth_keys_file, mode, 0o722)
+
+        with ChangeEffectiveId(user.uid, user.gid):
+            osfd = os_open(
+                auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, mode)
+            with open(osfd, "r+") as fd:
+                lockf(fd.fileno(), LOCK_SH)
+                try:
+                    existing = fd.read()
+                    if existing != auth_keys:
+                        # Need to rewrite.
+                        fd.seek(0)
+                        lockf(osfd, LOCK_EX)
+                        fd.write(auth_keys)
+                        fd.flush()
+                        fsync(fd.fileno())
+                finally:
+                    lockf(fd.fileno(), LOCK_UN)
 
     @staticmethod
     def _write_group(group: Group, gfile: TextIO, gshadow: TextIO) -> None:
@@ -561,6 +737,47 @@ class ShadowDatabase():
             rename(filename, backup_filename)
             rename(new_filename, filename)
 
+    @staticmethod
+    def _deny_access(filename: str, expected_uid: int, actual_uid: int) -> None:
+        """
+        ShadowDatabase._deny_access(
+            filename: str, expected_uid: int, actual_uid: int) -> None
+        Deny access to the specified file or directory by resetting permissions
+        to 000.
+        """
+        log.warning(
+            "Expected %s to be owned by uid %d but is owned by uid %d; "
+            "setting permissions to 000", filename, expected_uid, actual_uid)
+        try:
+            chmod(filename, 0)
+        except OSError as e:
+            log.error("Failed to chmod(%s, 0): %s", filename, e)
+
+    @staticmethod
+    def _check_reset_group_other_writable(filename: str, mode: int) -> None:
+        """
+        ShadowDatabase._check_reset_group_other_writable(
+            filename: str, mode: int) -> None
+        If filename is writable by group or other, log this information and
+        reset those bits.
+        """
+        group_writable = (mode & 0o020 != 0)
+        other_writable = (mode & 0o002 != 0)
+
+        who = []
+        if group_writable:
+            who.append("group")
+
+        if other_writable:
+            who.append("other")
+
+        if not who:
+            return
+
+        log.warning(
+            "%s is writable by %s; resetting these bits.",
+            filename, " and ".join(who))
+        chmod(filename, S_IMODE(mode) & 0o755)
 
 class ShadowDatabaseLock():
     """

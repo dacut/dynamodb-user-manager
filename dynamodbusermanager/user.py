@@ -3,13 +3,21 @@ Class for manipulating user information.
 """
 from datetime import date, timedelta
 from functools import total_ordering
-from typing import Any, Dict, Optional, NamedTuple, Type, TypeVar
+from logging import getLogger
+from os import stat
+from os.path import exists
+from stat import (S_IMODE, S_ISDIR, S_ISREG)
+from typing import (
+    Any, Collection, Dict, FrozenSet, Optional, NamedTuple, Set, Type, TypeVar,
+    Union)
 
 from .constants import (
     EPOCH, FIELD_PATTERN, REAL_NAME_MAX_LENGTH, UID_MIN, UID_MAX)
 from .entity import Entity
 
 # pylint: disable=C0103
+
+log = getLogger(__name__)
 
 class UserTuple(NamedTuple):
     """
@@ -29,6 +37,7 @@ class UserTuple(NamedTuple):
     password_warn_days: Optional[int]
     password_disable_days: Optional[int]
     account_expire_date: Optional[date]
+    ssh_public_keys: FrozenSet[str]
     modified: bool
 
 U = TypeVar("U", bound="User")  # pylint: disable=C0103
@@ -56,6 +65,7 @@ class User(Entity):
             password_warn_days: Optional[int] = None,
             password_disable_days: Optional[int] = None,
             account_expire_date: Optional[date] = None,
+            ssh_public_keys: Optional[Set[str]] = None,
             modified: bool = False) -> None:
         """
         User(
@@ -72,6 +82,7 @@ class User(Entity):
             password_warn_days: Optional[int] = None,
             password_disable_days: Optional[int] = None,
             account_expire_date: Optional[date] = None,
+            ssh_public_key: Optional[str] = None,
             modified: bool = False) -> User
         Create a new User object.
         """
@@ -87,6 +98,7 @@ class User(Entity):
         self.password_warn_days = password_warn_days
         self.password_disable_days = password_disable_days
         self.account_expire_date = account_expire_date
+        self.ssh_public_keys = ssh_public_keys
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, User):
@@ -191,6 +203,157 @@ class User(Entity):
         self._shell = value
 
     @property
+    def ssh_public_keys(self) -> FrozenSet[str]:
+        """
+        The SSH public keys of the user.
+        """
+        return frozenset(self._ssh_public_keys)
+
+    @ssh_public_keys.setter
+    def ssh_public_keys(
+            self, value: Optional[Union[Collection[str], str]]) -> None:
+        if value is None:
+            self._ssh_public_keys = set() # type: Set[str]
+            return
+
+        if isinstance(value, str):
+            self._ssh_public_keys = set([value])
+            return
+
+        if not isinstance(value, (list, tuple, set)):
+            raise TypeError("ssh_public_keys must be a collection of strings")
+
+        new_ssh_public_keys = set() # type: Set[str]
+        for el in value:
+            if not isinstance(el, str):
+                raise TypeError(
+                    "ssh_public_keys must be a collection of strings")
+
+            new_ssh_public_keys.add(el)
+
+        self._ssh_public_keys = new_ssh_public_keys
+
+    @property
+    def ssh_dir_permissions_ok(self) -> bool:
+        """
+        Indicates whether ~/.ssh exists, is a directory owned by the user,
+        and is only writable by the user.
+        """
+        home = self.home
+        if not home:
+            log.debug(
+                "User %s does not have a home directory set", self.name)
+            return False
+
+        ssh_dir = home + "/.ssh"
+        if not exists(ssh_dir):
+            log.debug(
+                "User %s does not have ~/.ssh directory: %s", self.name,
+                ssh_dir)
+            return False
+
+        try:
+            ssh_stat = stat(ssh_dir)
+        except OSError as e:
+            log.error("Unable to stat %s: %s", ssh_dir, e)
+            return False
+
+        if ssh_stat.st_uid != self.uid:
+            log.warning(
+                "User %s does not own ~/.ssh diretory %s: user uid %d, "
+                "owner uid %d", self.name, ssh_dir, self.uid, ssh_stat.st_uid)
+            return False
+
+        if not S_ISDIR(ssh_stat.st_mode):
+            log.warning(
+                "User %s ~/.ssh direcotry %s is not a directory", self.name,
+                ssh_dir)
+            return False
+
+        mode_bits = S_IMODE(ssh_stat.st_mode)
+        if mode_bits & 0o020:
+            log.warning(
+                "User %s ~/.ssh directory %s is group-writable", self.name,
+                ssh_dir)
+            return False
+
+        if mode_bits & 0o002:
+            log.warning(
+                "User %s ~/.ssh directory %s is other-writable", self.name,
+                ssh_dir)
+            return False
+
+        return True
+
+    @property
+    def authorized_keys_permissions_ok(self) -> bool:
+        """
+        Indicates whether ~/.ssh/authorized_keys exists, is owned by the
+        user, and is only writable by the user.
+        """
+        if not self.ssh_dir_permissions_ok:
+            return False
+
+        auth_keys = self.home + "/.ssh/authorized_keys"
+        if not exists(auth_keys):
+            log.debug(
+                "User %s does not have ~/.ssh/authorized_keys: %s", self.name,
+                auth_keys)
+            return False
+
+        try:
+            auth_keys_stat = stat(auth_keys)
+        except OSError as e:
+            log.error("Unable to stat %s: %s", auth_keys, e)
+            return False
+
+        if auth_keys_stat.st_uid != self.uid:
+            log.warning(
+                "User %s does not own ~/.ssh/authorized_keys file %s: user "
+                "uid %d, owner uid %d", self.name, auth_keys, self.uid,
+                auth_keys_stat.st_uid)
+            return False
+
+        if not S_ISREG(auth_keys_stat.st_mode):
+            log.warning(
+                "User %s ~/.ssh/authorized_keys file %s is not a file",
+                self.name, auth_keys)
+            return False
+
+        mode_bits = S_IMODE(auth_keys_stat.st_mode)
+        if mode_bits & 0o020:
+            log.warning(
+                "User %s ~/.ssh/authorized_keys file %s is group-writable",
+                self.name, auth_keys)
+            return False
+
+        if mode_bits & 0o002:
+            log.warning(
+                "User %s ~/.ssh/authorized_keys file %s is other-writable",
+                self.name, auth_keys)
+            return False
+
+        return True
+
+    @property
+    def authorized_keys(self) -> Set[str]:
+        """
+        Return the authorized keys found in ~/.ssh
+        """
+        result = set() # type: Set[str]
+        auth_keys = self.home + "/.ssh/authorized_keys"
+        if not self.authorized_keys_permissions_ok:
+            return result
+
+        with open(auth_keys, "r") as fd:
+            for line in fd:
+                line = line.strip()
+                if line:
+                    result.add(line)
+
+        return result
+
+    @property
     def as_tuple(self) -> UserTuple:
         """
         The user represented as an immutable tuple object.
@@ -209,6 +372,7 @@ class User(Entity):
             password_warn_days=self.password_warn_days,
             password_disable_days=self.password_disable_days,
             account_expire_date=self.account_expire_date,
+            ssh_public_keys=self.ssh_public_keys,
             modified=self.modified,
         )
 
@@ -321,6 +485,11 @@ class User(Entity):
             self.account_expire_date = account_expire_date
             self.modified = True
 
+        ssh_public_keys = item.get("SSHPublicKeys", {}).get("SS", set())
+        if self.ssh_public_keys != ssh_public_keys:
+            self.ssh_public_keys = ssh_public_keys
+            self.modified = True
+
         return self.modified
 
     @classmethod
@@ -346,4 +515,5 @@ class User(Entity):
             password_disable_days=item.get("PasswordDisableDays", {}).get("N"),
             account_expire_date=User.date_from_string(
                 item.get("AccountExpireDate", {}).get("S")),
+            ssh_public_keys=item.get("SSHPublicKeys", {}).get("SS", set()),
             modified=True)
