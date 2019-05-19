@@ -9,24 +9,21 @@ class Entity():
     """
     Common base class for users and groups.
     """
-    # pylint: disable=W0201
+    # pylint: disable=W0201,R0902
 
     def __init__(
-            self,
-            name: str,
-            gid: int,
-            password: Optional[str] = None,
+            self, name: str, gid: int, password: Optional[str] = None,
             modified: bool = False) -> None:
         """
-        Entity(
-            name: str, gid: int, password: Optional[str] = None,
-            modified: bool = False) -> Entity
-        Create a new entity with the specified name, group id, and optional
-        password.
+Entity(
+    name: str, gid: int, password: Optional[str] = None,
+    modified: bool = False) -> Entity
+Create a new entity with the specified name, group id, and optional
+password.
 
-        Each entity also holds a modified flag indicating whether it has been
-        modified in-memory from its database files (/etc/passwd, /etc/group,
-        etc.)
+Each entity also holds a modified flag indicating whether it has been
+modified in-memory from its database files (/etc/passwd, /etc/group,
+etc.)
         """
         super(Entity, self).__init__()
         self.name = name

@@ -48,17 +48,11 @@ class User(Entity):
     User object for holding data about a single user entry in the /etc/passwd
     and /etc/shadow files.
     """
-    # pylint: disable=W0201
+    # pylint: disable=W0201,R0902
 
-    def __init__(
-            self,
-            name: str,
-            uid: int,
-            gid: int,
-            real_name: str,
-            home: str,
-            shell: str,
-            password: Optional[str] = None,
+    def __init__( # pylint: disable=R0913,R0914
+            self, name: str, uid: int, gid: int, real_name: str, home: str,
+            shell: str, password: Optional[str] = None,
             last_password_change_date: Optional[date] = None,
             password_age_min_days: Optional[int] = None,
             password_age_max_days: Optional[int] = None,
@@ -68,23 +62,17 @@ class User(Entity):
             ssh_public_keys: Optional[Set[str]] = None,
             modified: bool = False) -> None:
         """
-        User(
-            name: str,
-            uid: int,
-            gid: int,
-            real_name: str,
-            home: str,
-            shell: str,
-            password: Optional[str] = None,
-            last_password_change_date: Optional[date] = None,
-            password_age_min_days: Optional[int] = None,
-            password_age_max_days: Optional[int] = None
-            password_warn_days: Optional[int] = None,
-            password_disable_days: Optional[int] = None,
-            account_expire_date: Optional[date] = None,
-            ssh_public_key: Optional[str] = None,
-            modified: bool = False) -> User
-        Create a new User object.
+User(
+    name: str, uid: int, gid: int, real_name: str, home: str, shell: str,
+    password: Optional[str] = None,
+    last_password_change_date: Optional[date] = None,
+    password_age_min_days: Optional[int] = None,
+    password_age_max_days: Optional[int] = None
+    password_warn_days: Optional[int] = None,
+    password_disable_days: Optional[int] = None,
+    account_expire_date: Optional[date] = None,
+    ssh_public_keys: Optional[str] = None, modified: bool = False) -> User
+Create a new User object.
         """
         super(User, self).__init__(name=name, gid=gid, password=password, modified=modified)
         self.name = name
@@ -239,6 +227,7 @@ class User(Entity):
         Indicates whether ~/.ssh exists, is a directory owned by the user,
         and is only writable by the user.
         """
+        # pylint: disable=R0911
         home = self.home
         if not home:
             log.debug(
@@ -291,6 +280,7 @@ class User(Entity):
         Indicates whether ~/.ssh/authorized_keys exists, is owned by the
         user, and is only writable by the user.
         """
+        # pylint: disable=R0911
         if not self.ssh_dir_permissions_ok:
             return False
 

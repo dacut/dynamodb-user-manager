@@ -90,7 +90,7 @@ def move_aside(filename: str) -> None:
             "Unable to rename %s to %s: %s", filename, backup_name, e)
         raise
 
-def _ensure_user_owns(
+def _ensure_user_owns( # pylint: disable=R0913
         uid: int, filename: str, check_fn: Callable[[int], bool],
         filetype: str, mode: int, mode_cmp_mask: int = 0o777) -> bool:
     """

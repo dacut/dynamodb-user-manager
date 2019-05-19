@@ -181,7 +181,7 @@ class ShadowDatabase():
                 if conv:
                     try:
                         value = conv(value)
-                    except Exception as e:
+                    except (TypeError, ValueError) as e:
                         log.error(
                             "Failed to convert login.defs %r=%r: %s", key,
                             value, e)
@@ -585,9 +585,10 @@ class ShadowDatabase():
                 self._write_group(group, gfd, gsfd)
                 group.modified = False
 
-    def _write_user(self, user: User, passwd: TextIO, shadow: TextIO) -> None:
+    @staticmethod
+    def _write_user(user: User, passwd: TextIO, shadow: TextIO) -> None:
         """
-        shadowdb.write_user(
+        ShadowDatabase.write_user(
             user: User, passwd: TextIO, shadow: TextIO) -> None
         Write the specified user out to the passwd+ and shadow+ files, and
         to the user's ~/.ssh/authorized_keys file.

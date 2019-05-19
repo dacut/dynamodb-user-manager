@@ -28,23 +28,17 @@ class Group(Entity):
     """
     # pylint: disable=W0201
 
-    def __init__(
-            self,
-            name: str,
-            gid: int,
+    def __init__(   # pylint: disable=R0913
+            self, name: str, gid: int,
             administrators: Optional[Collection[str]] = None,
             members: Optional[Collection[str]] = None,
-            password: Optional[str] = None,
-            modified: bool = False) -> None:
+            password: Optional[str] = None, modified: bool = False) -> None:
         """
-        Group(
-            name: str,
-            gid: int,
-            administrators: Optional[Collection[str]] = None,
-            members: Optional[Collection[str]] = None,
-            password: Optional[str] = None,
-            modified: bool = False) -> Group
-        Create a new Group object.
+Group(
+    name: str, gid: int, administrators: Optional[Collection[str]] = None,
+    members: Optional[Collection[str]] = None, password: Optional[str] = None,
+    modified: bool = False) -> Group
+Create a new Group object.
         """
         super(Group, self).__init__(name=name, gid=gid, password=password, modified=modified)
         self.administrators = administrators
@@ -119,19 +113,19 @@ class Group(Entity):
                 raise ValueError(f"username contains illegal characters: {username}")
 
         self._members = set(value)
-    
+
     def add_member(self, name: str) -> None:
         """
         Add a user to this group.
         """
         if not isinstance(name, str):
             raise TypeError("name must be a string")
-        
+
         if not NAME_PATTERN.match(name):
             raise ValueError(f"name contains illegal characters: {name}")
-        
+
         self._members.add(name)
-    
+
     def remove_member(self, name: str) -> None:
         """
         Remove a user from this group.
