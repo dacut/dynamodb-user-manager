@@ -100,10 +100,10 @@ class ShadowDatabase():
         "UID_MAX": int,
         "UID_MIN": int,
         "ULIMIT": int,
-        "UMASK": int,
+        "UMASK": lambda s: int(s, 8),
         "USERDEL_CMD": str,
         "USERGROUPS_ENAB": parse_bool,
-    }
+    }  # type: Dict[str, Callable[[str], Any]]
 
     def __init__(self) -> None:
         """
@@ -112,7 +112,7 @@ class ShadowDatabase():
         database files.
         """
         super(ShadowDatabase, self).__init__()
-        self.confi = {}     # type: Dict[str, Any]
+        self.config = {}     # type: Dict[str, Any]
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
         self.reload()
@@ -504,7 +504,7 @@ class ShadowDatabase():
             # By default, the user does not have an ssh_public_key.
             auth_keys = user.authorized_keys
             if user.ssh_public_keys != auth_keys:
-                user.ssh_public_keys = auth_keys
+                user.ssh_public_keys = auth_keys # type: ignore
                 user.modified = True
 
     @staticmethod
@@ -637,8 +637,15 @@ class ShadowDatabase():
         Create the home directory for the user if it does not already exist.
         """
         home = user.home
-        home_mask = self.config.get("UMASK", 0o022)
+        home_mask = self.config.get("UMASK")
+        if home_mask is None:
+            log.debug("UMASK is not configured in /etc/login.defs; assuming 0o022")
+            home_mask = 0o022
+        else:
+            log.debug("UMASK set to %03o", home_mask)
+
         home_mode = 0o777 & ~home_mask
+        log.debug("home_mode set to %03o", home_mode)
 
         if not home:
             log.warning(
@@ -679,6 +686,7 @@ class ShadowDatabase():
         with ChangeEffectiveId(user.uid, user.gid):
             osfd = os_open(
                 auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, mode)
+
             with open(osfd, "r+") as fd:
                 lockf(fd.fileno(), LOCK_SH)
                 try:

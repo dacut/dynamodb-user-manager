@@ -1,9 +1,12 @@
 """
 Class for manipulating group information.
 """
+# pylint: disable=C0103
+
 from functools import total_ordering
-from typing import (Any, Collection, Dict, List, NamedTuple, Optional, Set,
-                    Tuple, Union)
+from typing import (
+    Any, Collection, Dict, List, NamedTuple, Optional, Set, Tuple, Type,
+    TypeVar, Union)
 
 from .constants import NAME_PATTERN
 from .entity import Entity
@@ -19,6 +22,8 @@ class GroupTuple(NamedTuple):
     members: Set[str]
     password: Optional[str]
     modified: bool
+
+G = TypeVar("G", bound="Group")
 
 @total_ordering
 class Group(Entity):
@@ -172,3 +177,18 @@ Create a new Group object.
             self.modified = True
 
         return self.modified
+
+    @classmethod
+    def from_dynamodb_item(cls: Type[G], item: Dict[str, Any]) -> G:
+        """
+        Group.from_dynamodb_item(item: Dict[str, Any]) -> Group
+        Create a group from a given DynamoDB item. The modified flag is
+        automatically set to true.
+        """
+        return cls(
+            name=item["Name"]["S"],
+            gid=int(item["GID"]["N"]),
+            password=item.get("Password", {}).get("S"),
+            administrators=set(item.get("Administrators", {}).get("SS", [])),
+            members=set(item.get("Members", {}).get("SS", [])),
+            modified=True)

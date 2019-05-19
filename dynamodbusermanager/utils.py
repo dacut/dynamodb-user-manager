@@ -72,6 +72,22 @@ def parse_bool(s: str, default: bool = False, strict: bool = False) -> bool:
 
     return default
 
+def parse_opt_int(s: Optional[str]) -> Optional[int]:
+    """
+    parse_opt_int(s: Optional[str]) -> Optional[int]
+    If s is a string, parse it for an integer value (raising a ValueError if
+    it cannot be parsed correctly.)
+    If s is None, return None.
+    Otherwise, raise a TypeError.
+    """
+    if s is None:
+        return None
+
+    if isinstance(s, str):
+        return int(s)
+
+    raise TypeError(f"value must be a string or None: {type(s).__name__}")
+
 def move_aside(filename: str) -> None:
     """
     move_aside(filename: str) -> None
@@ -140,13 +156,16 @@ specified permissions.
 If the directory exists but is owned by another user or is not a directory, it
 is moved aside and a new, empty directory is created in its place.
     """
-    if _ensure_user_owns(uid, dirname, S_ISDIR, mode, mode_cmp_mask):
+    if _ensure_user_owns(
+            uid, dirname, S_ISDIR, "directory", mode, mode_cmp_mask):
         return
 
     # Directory does not exist; create it.
+    log.info("Creating %s with mode %03o", dirname, mode)
     mkdir(dirname, mode=mode)
 
     # Change ownership on the directory
+    log.info("Changing ownership on %s to %d:%d", dirname, uid, gid)
     chown(dirname, uid, gid)
 
 def ensure_user_owns_file(
@@ -160,7 +179,7 @@ specified permissions.
 If the file exists but is owned by another user or is not a file, it is moved
 aside.
     """
-    _ensure_user_owns(uid, filename, S_ISREG, mode, mode_cmp_mask)
+    _ensure_user_owns(uid, filename, S_ISREG, "file", mode, mode_cmp_mask)
 
 class ChangeEffectiveId():
     """

@@ -14,6 +14,7 @@ from typing import (
 from .constants import (
     EPOCH, FIELD_PATTERN, REAL_NAME_MAX_LENGTH, UID_MIN, UID_MAX)
 from .entity import Entity
+from .utils import parse_opt_int
 
 # pylint: disable=C0103
 
@@ -40,7 +41,7 @@ class UserTuple(NamedTuple):
     ssh_public_keys: FrozenSet[str]
     modified: bool
 
-U = TypeVar("U", bound="User")  # pylint: disable=C0103
+U = TypeVar("U", bound="User")
 
 @total_ordering
 class User(Entity):
@@ -423,7 +424,7 @@ Create a new User object.
         """
         super(User, self).update_from_dynamodb_item(item)
 
-        uid = item["UID"]["N"]
+        uid = int(item["UID"]["N"])
         if self.uid != uid:
             self.uid = uid
             self.modified = True
@@ -449,22 +450,26 @@ Create a new User object.
             self.last_password_change_date = last_password_change_date
             self.modified = True
 
-        password_age_min_days = item.get("PasswordAgeMinDays", {}).get("N")
+        password_age_min_days = parse_opt_int(
+            item.get("PasswordAgeMinDays", {}).get("N"))
         if self.password_age_min_days != password_age_min_days:
             self.password_age_min_days = password_age_min_days
             self.modified = True
 
-        password_age_max_days = item.get("PasswordAgeMaxDays", {}).get("N")
+        password_age_max_days = parse_opt_int(
+            item.get("PasswordAgeMaxDays", {}).get("N"))
         if self.password_age_max_days != password_age_max_days:
             self.password_age_max_days = password_age_max_days
             self.modified = True
 
-        password_warn_days = item.get("PasswordWarnDays", {}).get("N")
+        password_warn_days = parse_opt_int(
+            item.get("PasswordWarnDays", {}).get("N"))
         if self.password_warn_days != password_warn_days:
             self.password_warn_days = password_warn_days
             self.modified = True
 
-        password_disable_days = item.get("PasswordDisableDays", {}).get("N")
+        password_disable_days = parse_opt_int(
+            item.get("PasswordDisableDays", {}).get("N"))
         if self.password_disable_days != password_disable_days:
             self.password_disable_days = password_disable_days
             self.modified = True
@@ -485,24 +490,28 @@ Create a new User object.
     @classmethod
     def from_dynamodb_item(cls: Type[U], item: Dict[str, Any]) -> U:
         """
-        User.from_dynamodb_item(item: Dict[str, Any]) -> User
-        Create a user from a given DynamoDB item. The modified flag is
-        automatically set to true.
+User.from_dynamodb_item(item: Dict[str, Any]) -> User
+Create a user from a given DynamoDB item. The modified flag is
+automatically set to true.
         """
         return cls(
             name=item["Name"]["S"],
-            uid=item["UID"]["N"],
-            gid=item["GID"]["N"],
+            uid=int(item["UID"]["N"]),
+            gid=int(item["GID"]["N"]),
             real_name=item["RealName"]["S"],
             home=item["Home"]["S"],
             shell=item["Shell"]["S"],
             password=item.get("Password", {}).get("S"),
             last_password_change_date=User.date_from_string(
                 item.get("LastPasswordChangeDate", {}).get("S")),
-            password_age_min_days=item.get("PasswordAgeMinDays", {}).get("N"),
-            password_age_max_days=item.get("PasswordAgeMaxDays", {}).get("N"),
-            password_warn_days=item.get("PasswordWarnDays", {}).get("N"),
-            password_disable_days=item.get("PasswordDisableDays", {}).get("N"),
+            password_age_min_days=parse_opt_int(
+                item.get("PasswordAgeMinDays", {}).get("N")),
+            password_age_max_days=parse_opt_int(
+                item.get("PasswordAgeMaxDays", {}).get("N")),
+            password_warn_days=parse_opt_int(
+                item.get("PasswordWarnDays", {}).get("N")),
+            password_disable_days=parse_opt_int(
+                item.get("PasswordDisableDays", {}).get("N")),
             account_expire_date=User.date_from_string(
                 item.get("AccountExpireDate", {}).get("S")),
             ssh_public_keys=item.get("SSHPublicKeys", {}).get("SS", set()),

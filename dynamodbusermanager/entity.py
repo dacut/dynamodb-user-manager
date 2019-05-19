@@ -148,7 +148,7 @@ etc.)
         if self.name != item["Name"]["S"]:
             raise ValueError("Cannot update name")
 
-        gid = item["GID"]["N"]
+        gid = int(item["GID"]["N"])
         if self.gid != gid:
             self.gid = gid
             self.modified = True
