@@ -132,7 +132,8 @@ class DynamoDBTest(TestCase):
             }
         )
 
-        daemon = Daemon(ddb, "Users", "Groups")
+        config = {"user_table_name": "Users", "group_table_name": "Groups"}
+        daemon = Daemon(ddb, config=config)
         daemon.full_update()
 
         self.assertTrue(exists("/home/testscan1"), "/home/testscan1 missing")
