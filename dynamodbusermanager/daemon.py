@@ -53,7 +53,7 @@ class Daemon():
             items = page.get("Items", [])
             for item in items:
                 username = item["Name"]["S"]
-                assert username not in self.dynamodb_users
+                assert username not in users
 
                 user = self.shadow.users.get(username)
                 if user is None:
@@ -84,7 +84,7 @@ class Daemon():
             items = page.get("Items", [])
             for item in items:
                 groupname = item["Name"]["S"]
-                assert groupname not in self.dynamodb_groups
+                assert groupname not in groups
 
                 group = self.shadow.groups.get(groupname)
                 if group is None:
