@@ -19,7 +19,7 @@ RUN mkdir export
 VOLUME [ "/export" ]
 
 RUN mkdir dynamodb-user-manager
-WORKDIR dynamodb-user-manager
+WORKDIR /home/builder/dynamodb-user-manager
 
 COPY LICENSE ./
 COPY README.md ./
@@ -28,12 +28,6 @@ ENV VIRTUAL_ENV=/home/builder/dynamodb-user-manager/venv
 ENV PATH=${VIRTUAL_ENV}/bin:$PATH
 COPY requirements.txt ./
 RUN pip install --requirement requirements.txt
-#RUN BOTOCORE_DIR=$(ls -d venv/lib/python3.7/site-packages/botocore-*.dist-info); \
-#    echo $BOTOCORE_DIR; \
-#    mv $BOTOCORE_DIR/metadata.json $BOTOCORE_DIR/metadata.json.orig; \
-#    mv $BOTOCORE_DIR/METADATA $BOTOCORE_DIR/METADATA.orig; \
-#    sed -e 's/urllib3>=1.20,<1.25/urllib3>=1.20,<2.0/g' $BOTOCORE_DIR/metadata.json.orig > $BOTOCORE_DIR/metadata.json; \
-#    sed -e 's/urllib3>=1.20,<1.25/urllib3>=1.20,<2.0/g' $BOTOCORE_DIR/METADATA.orig > $BOTOCORE_DIR/METADATA
 
 COPY dynamodbusermanager dynamodbusermanager/
 COPY setup.py ./
