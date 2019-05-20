@@ -30,3 +30,5 @@ sudo chage --lastday 2001-01-01 --expiredate 2100-01-01 --inactive 50 \
 sudo --preserve-env $VIRTUAL_ENV/bin/nosetests --with-coverage \
     --cover-package dynamodbusermanager --nocapture --process-timeout 10 \
     tests
+
+cp .coverage /export

@@ -15,6 +15,9 @@ WORKDIR /home/builder
 # Cache a number of Python packages so we don't have to repeatedy download them
 RUN pip3 install --user --upgrade boto3 coverage moto mypy nose pip pylint
 
+RUN mkdir export
+VOLUME [ "/export" ]
+
 RUN mkdir dynamodb-user-manager
 WORKDIR dynamodb-user-manager
 
