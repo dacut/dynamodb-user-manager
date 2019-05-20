@@ -250,7 +250,7 @@ Create a new User object.
 
         if ssh_stat.st_uid != self.uid:
             log.warning(
-                "User %s does not own ~/.ssh diretory %s: user uid %d, "
+                "User %s does not own ~/.ssh directory %s: user uid %d, "
                 "owner uid %d", self.name, ssh_dir, self.uid, ssh_stat.st_uid)
             return False
 
