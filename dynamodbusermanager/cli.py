@@ -23,7 +23,11 @@ The configuration file is a JSON document in the form:
     "full_update_jitter": 600,
     "full_update_period": 3600,
     "group_table_name": "Groups",
-    "user_table_name": "Users"
+    "user_table_name": "Users",
+    "logging": {
+        "version": 1,
+        ...
+    }
 }
 
 The valid configuration keys are:
@@ -65,16 +69,21 @@ The valid configuration keys are:
     user_table_name <str>
         The name of the DynamoDB table to use to fetch for users. This defaults
         to "Users".
+    
+    logging <dict>
+        If present, this is passed to the Python configuration function
+        logging.config.dictConfig (http://bit.ly/2JROo0t).
 """
 # pylint: disable=C0103
 
 from getopt import getopt, GetoptError
+from logging.config import dictConfig
 from sys import argv, stderr, stdout
 from typing import Optional, Sequence, TextIO
 from boto3.session import Session as Boto3Session
 from .constants import (
     KEY_AWS_ACCESS_KEY, KEY_AWS_PROFILE, KEY_AWS_REGION, KEY_AWS_SECRET_KEY,
-    KEY_AWS_SESSION_TOKEN, DDBUM_CONFIG_FILENAME)
+    KEY_AWS_SESSION_TOKEN, KEY_LOGGING, DDBUM_CONFIG_FILENAME)
 from .daemon import Daemon
 from .utils import get_region
 
@@ -127,6 +136,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         boto_kw["region_name"] = config.pop(KEY_AWS_REGION)
     else:
         boto_kw["region_name"] = get_region()
+
+    if KEY_LOGGING in config:
+        logging_config = config.pop(KEY_LOGGING)
+        dictConfig(logging_config)
 
     session = Boto3Session(**boto_kw)
     ddb = session.client("dynamodb")
