@@ -45,8 +45,21 @@ LOCK_ALL = (LOCK_PASSWD | LOCK_GROUP | LOCK_GSHADOW | LOCK_SHADOW)
 # Pattern for splitting key/value pairs of the login.defs file
 LOGIN_DEFS_PATTERN = re_compile(r"(?P<key>[-A-Za-z0-9_]+)\s+(?P<value>.*)")
 
+# Shadow files
 LOGIN_DEFS_FILE = "/etc/login.defs"
 PASSWD_FILE = "/etc/passwd"
 GROUP_FILE = "/etc/group"
 GSHADOW_FILE = "/etc/gshadow"
 SHADOW_FILE = "/etc/shadow"
+
+# Daemon configuration file and keys
+DDBUM_CONFIG_FILENAME = "/etc/dynamodb-user-manager.cfg"
+KEY_AWS_ACCESS_KEY = "aws_access_key"
+KEY_AWS_PROFILE = "aws_profile"
+KEY_AWS_REGION = "aws_region"
+KEY_AWS_SECRET_KEY = "aws_secret_key"
+KEY_AWS_SESSION_TOKEN = "aws_session_token"
+KEY_GROUP_TABLE_NAME = "group_table_name"
+KEY_USER_TABLE_NAME = "user_table_name"
+KEY_FULL_UPDATE_JITTER = "full_update_jitter"
+KEY_FULL_UPDATE_PERIOD = "full_update_period"

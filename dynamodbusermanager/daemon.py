@@ -1,9 +1,15 @@
 """
 Daemon for keeping users in-sync with the DynamoDB table.
 """
+import json
 from logging import getLogger
+from random import randint
+from time import sleep
 from typing import Any, Dict, Set
 import botocore # pylint: disable=W0611
+from .constants import (
+    DDBUM_CONFIG_FILENAME, KEY_FULL_UPDATE_JITTER, KEY_FULL_UPDATE_PERIOD,
+    KEY_GROUP_TABLE_NAME, KEY_USER_TABLE_NAME)
 from .group import Group
 from .shadow import ShadowDatabase
 from .user import User
@@ -35,10 +41,13 @@ class Daemon():
         daemon.load_users() -> None
         Reload the entire users table.
         """
-        self.dynamodb_users.clear()
+        table_name = self.config.get(KEY_USER_TABLE_NAME, "Users")
+        log.info("Reloading users from DynamoDB table %s", table_name)
+
+        users = {} # type: Dict[str, User]
         paginator = self.ddb.get_paginator("scan")
         page_iterator = paginator.paginate(
-            TableName=self.config["user_table_name"], ConsistentRead=True)
+            TableName=table_name, ConsistentRead=True)
 
         # We rely entirely on the Boto3 client to retry failed reads here.
         for page in page_iterator:
@@ -54,17 +63,22 @@ class Daemon():
                 else:
                     user.update_from_dynamodb_item(item)
 
-                self.dynamodb_users[username] = user
+                users[username] = user
+
+        self.dynamodb_users = users
 
     def reload_groups(self) -> None:
         """
         daemon.reload_groups() -> None
         Reload the entire groups table.
         """
-        self.dynamodb_groups.clear()
+        table_name = self.config.get(KEY_GROUP_TABLE_NAME, "Groups")
+        log.info("Reloading groups from DynamoDB table %s", table_name)
+
+        groups = {} # type: Dict[str, Group]
         paginator = self.ddb.get_paginator("scan")
         page_iterator = paginator.paginate(
-            TableName=self.config["group_table_name"], ConsistentRead=True)
+            TableName=table_name, ConsistentRead=True)
 
         # We rely entirely on the Boto3 client to retry failed reads here.
         for page in page_iterator:
@@ -80,7 +94,9 @@ class Daemon():
                 else:
                     group.update_from_dynamodb_item(item)
 
-                self.dynamodb_groups[groupname] = group
+                groups[groupname] = group
+
+        self.dynamodb_groups = groups
 
     def full_update(self) -> None:
         """
@@ -97,9 +113,67 @@ class Daemon():
         # Rewrite the /etc/group, /etc/passwd, /etc/gshadow, and
         # /etc/shadow files.
         if self.shadow.modified:
+            log.info("Shadow database modified; rewriting")
             self.shadow.write()
 
         # For each DynamoDB user, make sure they have a valid home and ssh keys.
         for user in self.dynamodb_users.values():
             self.shadow.create_user_home(user)
             self.shadow.write_user_ssh_keys(user)
+
+    def main_loop(self) -> None:
+        """
+        daemon.main_loop() -> None
+        Run continuously until interrupted, polling the DynamoDB table and
+        rewriting the shadow files (if needed) periodicially.
+
+        The periodicity is controlled by the following config keys:
+            full_update_period <int>
+                The interval, in seconds, between polls. If unspecified, this
+                defaults to 3600 seconds (1 hour).
+
+            full_update_jitter <int>
+                Maximum jitter, in seconds, to add to the period. This prevents
+                many instances of DynamoDBUserManager from simultaneously
+                overloading DynamoDB. If unspecified, this defaults to
+                600 seconds (10 minutes)
+        """
+        while True:
+            jitter_max = self.config.get(KEY_FULL_UPDATE_JITTER, 600)
+            jitter = randint(0, jitter_max)
+            log.info(
+                "Jitter sleeping for %d seconds (of %d maximum)", jitter,
+                jitter_max)
+
+            sleep(jitter)
+
+            log.info("Executing full update")
+            try:
+                self.full_update()
+                log.info("Full update completed successfully")
+            except Exception as e:
+                log.error("Full update failed: %s", e, exc_info=True)
+
+            period = self.config.get(KEY_FULL_UPDATE_PERIOD)
+            log.info("Regular sleeping for %d seconds", period)
+            sleep(period)
+
+            # For testing purposes
+            self.main_loop_done_hook()
+
+    def main_loop_done_hook(self) -> Any: # pragma: nocover
+        """
+        daemon.main_loop_done_hook() -> None
+        Hook method called at the end of main_loop. Not used except in unit
+        tests as an escape hatch.
+        """
+        return
+
+    @staticmethod
+    def parse_config(filename: str = DDBUM_CONFIG_FILENAME) -> Dict[str, Any]:
+        """
+        Daemon.read_config(filename: str = "/etc/dynamodb-user-manager.cfg") -> None
+        Return configuration from the specified JSON file.
+        """
+        with open(filename, "r") as fd:
+            return json.load(fd)

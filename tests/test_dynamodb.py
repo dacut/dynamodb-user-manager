@@ -132,9 +132,30 @@ class DynamoDBTest(TestCase):
             }
         )
 
-        config = {"user_table_name": "Users", "group_table_name": "Groups"}
+        with open("/etc/dynamodb-user-manager.cfg", "w") as fd:
+            fd.write("""\
+{
+    "full_update_jitter": 2,
+    "full_update_period": 1,
+    "group_table_name": "Groups",
+    "user_table_name": "Users"
+}
+""")
+
+        config = Daemon.parse_config()
         daemon = Daemon(ddb, config=config)
-        daemon.full_update()
+
+        class TestDone(Exception):
+            pass
+
+        def exit_loop(*args):
+            raise TestDone()
+
+        daemon.main_loop_done_hook = exit_loop
+        try:
+            daemon.main_loop()
+        except TestDone:
+            pass
 
         self.assertTrue(exists("/home/testscan1"), "/home/testscan1 missing")
         s = stat("/home/testscan1")
@@ -147,4 +168,3 @@ class DynamoDBTest(TestCase):
         with open("/home/testscan1/.ssh/authorized_keys", "r") as fd:
             key = fd.read().strip()
             self.assertEqual(key, DUMMY_KEY_1)
-

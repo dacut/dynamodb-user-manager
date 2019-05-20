@@ -35,7 +35,7 @@ def get_region():
       * The environment variable AWS_REGION
       * The environment variable AWS_DEFAULT_REGION
       * Instance availability zone
-      * us-gov-west-1
+      * us-east-1
     """
     region = environ.get("AWS_REGION")
     if not region:
@@ -43,11 +43,11 @@ def get_region():
     if not region:
         try:
             az = requests.get(AZ_METADATA_URL, timeout=METADATA_TIMEOUT).text
+            region = az[:-1]
         except ConnectTimeout:
             pass
-        region = az[:-1]
     if not region:
-        region = "us-gov-west-1"
+        region = "us-east-1"
 
     return region
 
