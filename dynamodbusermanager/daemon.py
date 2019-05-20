@@ -1,14 +1,13 @@
 """
 Daemon for keeping users in-sync with the DynamoDB table.
 """
-import json
 from logging import getLogger
 from random import randint
 from time import sleep
-from typing import Any, Dict, Set
+from typing import Any, Dict
 import botocore # pylint: disable=W0611
 from .constants import (
-    DDBUM_CONFIG_FILENAME, KEY_FULL_UPDATE_JITTER, KEY_FULL_UPDATE_PERIOD,
+    KEY_FULL_UPDATE_JITTER, KEY_FULL_UPDATE_PERIOD,
     KEY_GROUP_TABLE_NAME, KEY_USER_TABLE_NAME)
 from .group import Group
 from .shadow import ShadowDatabase
@@ -138,6 +137,7 @@ class Daemon():
                 overloading DynamoDB. If unspecified, this defaults to
                 600 seconds (10 minutes)
         """
+        log.info("Starting main_loop")
         while True:
             jitter_max = self.config.get(KEY_FULL_UPDATE_JITTER, 600)
             jitter = randint(0, jitter_max)
@@ -151,7 +151,7 @@ class Daemon():
             try:
                 self.full_update()
                 log.info("Full update completed successfully")
-            except Exception as e:
+            except Exception as e: # pylint: disable=W0703
                 log.error("Full update failed: %s", e, exc_info=True)
 
             period = self.config.get(KEY_FULL_UPDATE_PERIOD)
@@ -167,13 +167,5 @@ class Daemon():
         Hook method called at the end of main_loop. Not used except in unit
         tests as an escape hatch.
         """
+        # pylint: disable=R0201
         return
-
-    @staticmethod
-    def parse_config(filename: str = DDBUM_CONFIG_FILENAME) -> Dict[str, Any]:
-        """
-        Daemon.read_config(filename: str = "/etc/dynamodb-user-manager.cfg") -> None
-        Return configuration from the specified JSON file.
-        """
-        with open(filename, "r") as fd:
-            return json.load(fd)

@@ -33,7 +33,7 @@ The configuration file is a JSON document in the form:
 The valid configuration keys are:
     aws_access_key / aws_secret_key / aws_session_token / aws_profile <str>
         Static AWS credentials to use.
-        
+
         If aws_access_key and aws_secret_key (and, optionally,
         aws_session_token) are specified, these are fed directly into Boto and
         will be used.
@@ -69,7 +69,7 @@ The valid configuration keys are:
     user_table_name <str>
         The name of the DynamoDB table to use to fetch for users. This defaults
         to "Users".
-    
+
     logging <dict>
         If present, this is passed to the Python configuration function
         logging.config.dictConfig (http://bit.ly/2JROo0t).
@@ -77,15 +77,17 @@ The valid configuration keys are:
 # pylint: disable=C0103
 
 from getopt import getopt, GetoptError
+import json
 from logging.config import dictConfig
 from sys import argv, stderr, stdout
-from typing import Optional, Sequence, TextIO
-from boto3.session import Session as Boto3Session
+from typing import Any, Dict, Optional, Sequence, TextIO
 from .constants import (
-    KEY_AWS_ACCESS_KEY, KEY_AWS_PROFILE, KEY_AWS_REGION, KEY_AWS_SECRET_KEY,
-    KEY_AWS_SESSION_TOKEN, KEY_LOGGING, DDBUM_CONFIG_FILENAME)
-from .daemon import Daemon
-from .utils import get_region
+    DDBUM_CONFIG_FILENAME, KEY_AWS_ACCESS_KEY, KEY_AWS_PROFILE, KEY_AWS_REGION,
+    KEY_AWS_SECRET_KEY, KEY_AWS_SESSION_TOKEN, KEY_LOGGING)
+
+# Do *not* import other dynamodbusermanager modules here. They configure
+# loggers at the module scope that will become disabled when we initialize
+# logging. Instead, they're imported just-in-time within main itself.
 
 def main(args: Optional[Sequence[str]] = None) -> int:
     """
@@ -104,23 +106,34 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             if opt in ("-h", "--help"):
                 usage(stdout)
                 return 0
-            
+
             if opt in ("-c", "--config"):
                 config_filename = val
     except GetoptError as e:
         print(str(e), file=stderr)
         return 1
-    
+
     if args:
         print(f"Unknown argument {args[0]}", file=stderr)
         usage()
         return 1
 
+    # Ingest the config file.
     try:
-        config = Daemon.parse_config(config_filename)
+        config = parse_config(config_filename)
     except IOError as e:
         print(f"{config_filename}: {e}", file=stderr)
         return 1
+
+    # Logging *must* be configured before we import the daemon or Boto.
+    if KEY_LOGGING in config:
+        logging_config = config.pop(KEY_LOGGING)
+        dictConfig(logging_config)
+
+    # Now we can import other dynamodbusermanager modules.
+    from .daemon import Daemon
+    from .utils import get_region
+    from boto3.session import Session as Boto3Session
 
     if KEY_AWS_ACCESS_KEY in config and KEY_AWS_SECRET_KEY in config:
         boto_kw["aws_access_key_id"] = config.pop(KEY_AWS_ACCESS_KEY)
@@ -137,15 +150,19 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     else:
         boto_kw["region_name"] = get_region()
 
-    if KEY_LOGGING in config:
-        logging_config = config.pop(KEY_LOGGING)
-        dictConfig(logging_config)
-
     session = Boto3Session(**boto_kw)
     ddb = session.client("dynamodb")
     daemon = Daemon(ddb, config)
     daemon.main_loop()
     return 0
+
+def parse_config(filename: str = DDBUM_CONFIG_FILENAME) -> Dict[str, Any]:
+    """
+    read_config(filename: str = "/etc/dynamodb-user-manager.cfg") -> None
+    Return configuration from the specified JSON file.
+    """
+    with open(filename, "r") as fd:
+        return json.load(fd)
 
 def usage(fd: TextIO = stderr) -> None:
     """
