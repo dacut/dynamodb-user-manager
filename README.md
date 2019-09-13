@@ -83,8 +83,8 @@ DynamoDB User Manager imposes the following restrictions:
 
 *   User and group names: 1-256 ASCII characters. Valid characters are
     letters, digits, period, underscore, and hyphen; the hyphen cannot be the
-    first character of the name. ((POSIX 3.437)[http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_437],
-    (portable filename character set)[http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282], `/usr/include/bits/local_lim.h`)
+    first character of the name. (See [POSIX 3.437](http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_437),
+    [portable filename character set](http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282), [`LOGIN_NAME_MAX`](https://linux.die.net/man/3/sysconf).)
 *   GECOS (realname, office, phone, etc): 256 characters, since 512
     characters is a commonly used buffer size for the entire passwd line.
     Colons, newlines, vertical tabs, formfeeds, and the NUL character are
