@@ -16,7 +16,7 @@ setup(
     python_requires=">=3.6",
     zip_safe=False,
     author="David Cuthbert",
-    author_email="cuthbert@amazon.com",
+    author_email="dacut@kanga.org",
     license="Apache-2.0",
-    url="https://github.com/aws-proserve-cms/dynamodb-user-manager",
+    url="https://github.com/dacut/dynamodb-user-manager",
 )
