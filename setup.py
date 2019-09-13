@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(
-    name="DynamoDBUserManager",
+    name="dynamodb-user-manager",
     description="Manage the local user database from DynamoDB",
     version="0.1",
     packages=["dynamodbusermanager"],
