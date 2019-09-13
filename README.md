@@ -1,4 +1,4 @@
-# DynamoDB User Manager
+# DynamoDB User Manager (DDUM)
 Manage Linux users from DynamoDB.
 
 This module runs as a daemon that periodically scans a pair of DynamoDB tables
@@ -9,6 +9,13 @@ even when the network is adversely affected.
 
 When installed via setup.py using the defaults, a daemon script installed as
 `/usr/local/bin/dynamodb-user-manager`.
+
+DDUM is conservative in what it does. It modifies and adds users to the
+system; it never deletes them. To disable a user account, set the
+`AccountExpireDate` to a date in the past. DDUM will update the shadow entry
+for this user, disabling their account. This also preserves audit history in
+a sane way; you will no longer have dangling user ids and the risk of reusing
+a user id is reduced.
 
 # Configuration
 Configuring the daemon requires a JSON configuration file; by default, this is
@@ -79,7 +86,7 @@ The valid configuration keys are:
 Linux does not have a well-defined set of rules for what can appear in various
 fields -- a lot depends on the internal implementation of various libraries.
 
-DynamoDB User Manager imposes the following restrictions:
+DDUM imposes the following restrictions:
 
 *   User and group names: 1-256 ASCII characters. Valid characters are
     letters, digits, period, underscore, and hyphen; the hyphen cannot be the
