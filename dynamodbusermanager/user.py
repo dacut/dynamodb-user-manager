@@ -6,6 +6,7 @@ from functools import total_ordering
 from logging import getLogger
 from os import stat
 from os.path import exists
+from re import compile as re_compile
 from stat import (S_IMODE, S_ISDIR, S_ISREG)
 from typing import (
     Any, Collection, Dict, FrozenSet, Optional, NamedTuple, Set, Type, TypeVar,
@@ -400,6 +401,10 @@ Create a new User object.
 
         return days
 
+    _iso8601_date_pattern = re_compile(
+        r"^(?P<year>[0-9]{4})-?"
+        r"(?P<month>[0-9][1-9]|1[0-2])-?"
+        r"(?P<day>0[1-9]|[12][0-9]|3[01])$")
     @staticmethod
     def date_from_string(s: Optional[str]) -> Optional[date]:
         """
@@ -410,7 +415,13 @@ Create a new User object.
         if s is None:
             return None
 
-        return date.fromisoformat(s)
+        m = User._iso8601_date_pattern.match(s)
+        if not m:
+            raise ValueError("Cannot parse as date: %r" % s)
+        year = int(m.group("year"))
+        month = int(m.group("month"))
+        day = int(m.group("day"))
+        return date(year, month,day)
 
     def update_from_dynamodb_item(self, item: Dict[str, Any]) -> bool:
         """
