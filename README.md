@@ -17,6 +17,25 @@ for this user, disabling their account. This also preserves audit history in
 a sane way; you will no longer have dangling user ids and the risk of reusing
 a user id is reduced.
 
+# Command line arguments
+Usage: dynamodb-user-manager \[options\]
+
+Options:
+* `-h` | `--help`
+    Show this usage information.
+
+* <code>-c <i>filename</i></code> | <code>--config <i>filename</i></code>
+    Read configuration from _filename_ instead of
+    `/etc/dynamodb-user-manager.cfg`.
+    
+* `-f` | `--foreground`
+    Don't fork into the background (don't daemonize).
+    
+* <code>-p <i>filename</i></code> | <code>--pidfile <i>filename</i></code>
+    Write the process pid to _filename_ instead of
+    `/var/run/dynamodb-user-manager.pid`.
+
+
 # Configuration
 Configuring the daemon requires a JSON configuration file; by default, this is
 `/etc/dynamodb-user-manager.cfg`. You can override this with the `--config`

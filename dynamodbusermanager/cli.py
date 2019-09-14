@@ -11,6 +11,13 @@ Options:
         Read configuration from <filename> instead of
         /etc/dynamodb-user-manager.cfg.
 
+    -f | --foreground
+        Don't fork into the background (don't daemonize).
+
+    -p <filename> | --pidfile <filename>
+        Write the process pid to <filename> instead of
+        /var/run/dynamodb-user-manager.pid.
+
 
 Configuration file:
 The configuration file is a JSON document in the form:
@@ -76,11 +83,13 @@ The valid configuration keys are:
 """
 # pylint: disable=C0103
 
+from functools import partial
 from getopt import getopt, GetoptError
 import json
 from logging.config import dictConfig
 from sys import argv, stderr, stdout
 from typing import Any, Dict, Optional, Sequence, TextIO
+from daemonize import Daemonize
 from .constants import (
     DDBUM_CONFIG_FILENAME, KEY_AWS_ACCESS_KEY, KEY_AWS_PROFILE, KEY_AWS_REGION,
     KEY_AWS_SECRET_KEY, KEY_AWS_SESSION_TOKEN, KEY_LOGGING)
@@ -95,13 +104,15 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     Main entrypoint of the program.
     """
     config_filename = DDBUM_CONFIG_FILENAME
-    boto_kw = {}
+    foreground = False
+    pidfile = "/var/run/dynamodb-user-manager.pid"
 
     if args is None:
         args = argv[1:]
 
     try:
-        opts, args = getopt(args, "hc:", ["help", "config="])
+        opts, args = getopt(
+            list(args), "hc:fp:", ["help", "config=", "foreground", "pidfile="])
         for opt, val in opts:
             if opt in ("-h", "--help"):
                 usage(stdout)
@@ -109,6 +120,12 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
             if opt in ("-c", "--config"):
                 config_filename = val
+
+            if opt in ("-f", "--foreground"):
+                foreground = True
+
+            if opt in ("-p", "--pidfile"):
+                pidfile = val
     except GetoptError as e:
         print(str(e), file=stderr)
         return 1
@@ -125,6 +142,19 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         print(f"{config_filename}: {e}", file=stderr)
         return 1
 
+    if not foreground:
+        daemonize = Daemonize(
+            app="dynamodb-user-manager", pid=pidfile, action=partial(run, config))
+        daemonize.start()
+        return 0
+
+    return run(config)
+
+def run(config: Dict[str, Any]) -> int:
+    """
+    Main loop after daemonization (if applicable)
+    """
+    boto_kw = {}
     # Logging *must* be configured before we import the daemon or Boto.
     if KEY_LOGGING in config:
         logging_config = config.pop(KEY_LOGGING)
