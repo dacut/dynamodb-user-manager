@@ -117,8 +117,12 @@ class Daemon():
 
         # For each DynamoDB user, make sure they have a valid home and ssh keys.
         for user in self.dynamodb_users.values():
-            self.shadow.create_user_home(user)
-            self.shadow.write_user_ssh_keys(user)
+            try:
+                self.shadow.create_user_home(user)
+                self.shadow.write_user_ssh_keys(user)
+            except Exception as e: # pylint: disable=W0703
+                log.error("Failed to create/update user %s: %s", user.name, e,
+                          exc_info=True)
 
     def main_loop(self) -> None:
         """
