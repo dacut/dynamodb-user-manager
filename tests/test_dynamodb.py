@@ -133,6 +133,15 @@ class DynamoDBTest(TestCase):
             }
         )
 
+        ddb.put_item(
+            TableName="Users",
+            Item={
+                "Name": {"S": "testscan3"},
+                "UID": {"N": "6003"},
+                "GID": {"N": "6003"},
+            }
+        )
+
         with open("/etc/dynamodb-user-manager.cfg", "w") as fd:
             fd.write("""\
 {
@@ -169,3 +178,8 @@ class DynamoDBTest(TestCase):
         with open("/home/testscan1/.ssh/authorized_keys", "r") as fd:
             key = fd.read().strip()
             self.assertEqual(key, DUMMY_KEY_1)
+
+        # Make sure the user with the empty home, shell, and real name was
+        # created.
+        with open("/etc/passwd", "r") as fd:
+            self.assertIn("testscan3:", fd.read())

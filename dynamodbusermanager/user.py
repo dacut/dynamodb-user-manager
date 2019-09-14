@@ -440,17 +440,17 @@ Create a new User object.
             self.uid = uid
             self.modified = True
 
-        real_name = item["RealName"]["S"]
+        real_name = item.get("RealName", {"S": ""})["S"]
         if self.real_name != real_name:
             self.real_name = real_name
             self.modified = True
 
-        home = item["Home"]["S"]
+        home = item.get("Home", {"S": ""})["S"]
         if self.home != home:
             self.home = home
             self.modified = True
 
-        shell = item["Shell"]["S"]
+        shell = item.get("Shell", {"S": ""})["S"]
         if self.shell != shell:
             self.shell = shell
             self.modified = True
@@ -509,9 +509,9 @@ automatically set to true.
             name=item["Name"]["S"],
             uid=int(item["UID"]["N"]),
             gid=int(item["GID"]["N"]),
-            real_name=item["RealName"]["S"],
-            home=item["Home"]["S"],
-            shell=item["Shell"]["S"],
+            real_name=item.get("RealName", {"S": ""})["S"],
+            home=item.get("Home", {"S": ""})["S"],
+            shell=item.get("Shell", {"S": ""})["S"],
             password=item.get("Password", {}).get("S"),
             last_password_change_date=User.date_from_string(
                 item.get("LastPasswordChangeDate", {}).get("S")),
