@@ -27,7 +27,7 @@ from .user import User
 from .utils import (
     ChangeEffectiveId, ensure_user_owns_dir, ensure_user_owns_file, parse_bool)
 
-# pylint: disable=C0103,C0325
+# pylint: disable=C0103,C0302,C0325,R0912,R0914,R0915
 
 log = getLogger(__name__)
 
@@ -441,7 +441,7 @@ class ShadowDatabase():
         # WARNING: Never log a line from the shadow file. An errant typo in
         # the file could cause the password to be logged. In the log statements
         # below, we always refer to line numbers instead.
-        with open(SHADOW_FILE, "r") as fd:
+        with open(filename, "r") as fd:
             for line_no, line in enumerate(fd):
                 line_no += 1 # Print 1-based line numbers
                 line = line.rstrip()
