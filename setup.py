@@ -15,7 +15,8 @@ setup(
     packages=["dynamodbusermanager"],
     entry_points={
         "console_scripts": [
-            "dynamodb-user-manager = dynamodbusermanager.cli:main"
+            "dynamodb-user-manager = dynamodbusermanager.cli:main",
+            "dynamodb-user-export = dynamodbusermanager.export:main",
         ]
     },
     install_requires=["boto3>=1.9","daemonize>=2.5.0","requests<=2.21","urllib3>=1.20,<1.25"],

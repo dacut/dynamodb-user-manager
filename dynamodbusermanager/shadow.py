@@ -105,7 +105,7 @@ class ShadowDatabase():
         "USERGROUPS_ENAB": parse_bool,
     }  # type: Dict[str, Callable[[str], Any]]
 
-    def __init__(self) -> None:
+    def __init__(self, skip_load: bool = False) -> None:
         """
         ShadowDatabase() -> ShadowDatabase
         Create a new shadow database object, initialized from the shadow
@@ -115,7 +115,8 @@ class ShadowDatabase():
         self.config = {}     # type: Dict[str, Any]
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
-        self.reload()
+        if not skip_load:
+            self.reload()
 
     def reload(self) -> None:
         """
@@ -127,13 +128,13 @@ class ShadowDatabase():
         self.users = {}     # type: Dict[str, User]
         self.groups = {}    # type: Dict[str, Group]
 
-        self._load_login_defs()
+        self.load_login_defs()
 
         with ShadowDatabaseLock(timeout=15):
-            self._load_passwd_file()
-            self._load_group_file()
-            self._load_gshadow_file()
-            self._load_shadow_file()
+            self.load_passwd_file()
+            self.load_group_file()
+            self.load_gshadow_file()
+            self.load_shadow_file()
 
         self._load_ssh_public_keys()
 
@@ -162,12 +163,12 @@ class ShadowDatabase():
 
         return False
 
-    def _load_login_defs(self) -> None:
+    def load_login_defs(self, filename: str = LOGIN_DEFS_FILE) -> None:
         """
-        shadow_db._load_login_defs() -> None
+        shadow_db.load_login_defs(filename: str = "/etc/login.defs") -> None
         Load the /etc/login.defs file and populate self.config.
         """
-        with open(LOGIN_DEFS_FILE, "r") as fd:
+        with open(filename, "r") as fd:
             for line in fd:
                 line = line.strip()
                 m = LOGIN_DEFS_PATTERN.match(line)
@@ -187,15 +188,16 @@ class ShadowDatabase():
                             value, e)
                 self.config[key] = value
 
-    def _load_passwd_file(self) -> None:
+    def load_passwd_file(self, filename: str = PASSWD_FILE) -> None:
         """
-        shadow_db._load_passwd_file() -> None
+        shadow_db.load_passwd_file(filename: str = "/etc/passwd") -> None
         Populate users and (some of) their attributes from the /etc/passwd
         file.
 
-        This should be called with the database lock held.
+        This should be called with the database lock held if PASSWD_FILE is
+        being read.
         """
-        with open(PASSWD_FILE, "r") as fd:
+        with open(filename, "r") as fd:
             for line in fd:
                 line = line.rstrip()
 
@@ -267,15 +269,16 @@ class ShadowDatabase():
                     name=name, uid=uid, gid=gid, real_name=real_name,
                     home=home, shell=shell, modified=modified)
 
-    def _load_group_file(self) -> None:
+    def load_group_file(self, filename: str = GROUP_FILE) -> None:
         """
-        shadow_db._load_group_file() -> None
+        shadow_db.load_group_file(filename: str = "/etc/groups") -> None
         Populate groups, user-group-memberships, and (some of) their
         attributes from the /etc/group file.
 
-        This should be called with the database lock held.
+        This should be called with the database lock held if GROUP_FILE is
+        being read.
         """
-        with open(GROUP_FILE, "r") as fd:
+        with open(filename, "r") as fd:
             for line in fd:
                 line = line.rstrip()
 
@@ -339,19 +342,20 @@ class ShadowDatabase():
                     name=name, gid=gid, members=members,
                     modified=modified)
 
-    def _load_gshadow_file(self) -> None:
+    def load_gshadow_file(self, filename: str = GSHADOW_FILE) -> None:
         """
-        shadow_db._load_gshadow_file() -> None
+        shadow_db.load_gshadow_file(filename: str = "/etc/gshadow") -> None
         Populate group passwords, administrators, and re-validate members
         from the /etc/gshadow file.
 
-        This should be called with the database lock held.
+        This should be called with the database lock held if GSHADOW_FILE is
+        being read.
         """
 
         # WARNING: Never log a line from the gshadow file. An errant typo in
         # the file could cause the password to be logged. In the log statements
         # below, we always refer to line numbers instead.
-        with open(GSHADOW_FILE, "r") as fd:
+        with open(filename, "r") as fd:
             for line_no, line in enumerate(fd):
                 line_no += 1 # Print 1-based line numbers
                 line = line.rstrip()
@@ -425,12 +429,13 @@ class ShadowDatabase():
                         group.members.update(members)
                         group.modified = True
 
-    def _load_shadow_file(self) -> None:
+    def load_shadow_file(self, filename: str = SHADOW_FILE) -> None:
         """
-        shadow_db._load_shadow_file() -> None
+        shadow_db.load_shadow_file(filename: str = "/etc/shadow") -> None
         Populate user passwords and password policies from the /etc/shadow file.
 
-        This should be called with the database lock held.
+        This should be called with the database lock held if SHADOW_FILE is
+        being read.
         """
 
         # WARNING: Never log a line from the shadow file. An errant typo in
