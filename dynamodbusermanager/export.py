@@ -45,6 +45,7 @@ Options:
     --profile <profile>
         Use the specified profile from ~/.aws/credentials.
 """
+# pylint: disable=C0103,R0912,R0914,R0915
 from getopt import getopt, GetoptError
 from sys import argv, stdout, stderr
 from time import time

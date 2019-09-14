@@ -421,7 +421,7 @@ Create a new User object.
         year = int(m.group("year"))
         month = int(m.group("month"))
         day = int(m.group("day"))
-        return date(year, month,day)
+        return date(year, month, day)
 
     def update_from_dynamodb_item(self, item: Dict[str, Any]) -> bool:
         """
