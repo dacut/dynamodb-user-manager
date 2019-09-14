@@ -8,40 +8,40 @@ Options:
 
     --passwd <filename> | --password <filename>
         Read password file from <filename> instead of {PASSWD_FILE}.
-    
+
     --no-passwd | --no-password
         Skip reading the password file. If specified, this also skips reading
         the shadow file and exporting any users.
 
     --shadow <filename>
         Read shadow password file from <filename> instead of {SHADOW_FILE}.
-    
+
     --no-shadow
         Skip reading the shadow password file.
-    
+
     --group <filename>
         Read group file from <filename> intead of {GROUP_FILE}.
-    
+
     --no-group
         Skip reading the group file. If specified, this also skips reading the
         gshadow file and exporting any groups.
-    
+
     --gshadow <filename>
         Read group shadow password file from <filename> instead of
         {GSHADOW_FILE}.
-    
+
     --no-gshadow
         Skip reading the group shadow password file.
-    
+
     --user-table <name>
         Write users to this DynamoDB table.
-    
+
     --group-table <name>
         Write groups to this DynamoDB table.
-    
+
     --region <region>
         Use the specified AWS region.
-    
+
     --profile <profile>
         Use the specified profile from ~/.aws/credentials.
 """
@@ -71,7 +71,7 @@ def user_to_dynamodb_item(user: User) -> Dict[str, Any]:
 
     if user.home:
         item["Home"] = {"S": user.home}
-    
+
     if user.shell:
         item["Shell"] = {"S": user.shell}
 
@@ -114,13 +114,13 @@ def group_to_dynamodb_item(group: Group) -> Dict[str, Any]:
 
     if group.password is not None:
         item["Password"] = {"S": group.password}
-    
+
     if group.administrators:
         item["Administrators"] = {"SS": list(group.administrators)}
-    
+
     if group.members:
         item["Members"] = {"SS": list(group.members)}
-    
+
     return item
 
 def main(args: Optional[Sequence[str]] = None) -> int:
@@ -138,52 +138,52 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     if args is None:
         args = argv[1:]
-    
+
     try:
         opts, args = getopt(
             list(args), "h",
             ["help", "passwd=", "password=", "no-passwd", "no-password",
              "shadow=", "no-shadow", "group=", "gshadow=", "no-gshadow",
              "users-table=", "groups-table=", "region=", "profile="])
-        
+
         for opt, val in opts:
             if opt in ("-h", "--help",):
                 usage(stdout)
                 return 0
-            
+
             if opt in ("--passwd", "--password",):
                 passwd_file = val
-            
+
             if opt in ("--no-passwd", "--no-password",):
                 passwd_file = None
-            
+
             if opt == "--shadow":
                 shadow_file = val
-            
+
             if opt == "--no-shadow":
                 shadow_file = None
-            
+
             if opt == "--group":
                 group_file = val
-            
+
             if opt == "--no-group":
                 group_file = None
-            
+
             if opt == "--gshadow":
                 gshadow_file = val
-            
+
             if opt == "--no-gshadow":
                 gshadow_file = None
 
             if opt == "--users-table":
                 users_table = val
-            
+
             if opt == "--groups-table":
                 groups_table = val
-            
+
             if opt == "--region":
                 boto_kw["region_name"] = val
-            
+
             if opt == "--profile":
                 boto_kw["profile_name"] = val
 
@@ -224,7 +224,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             except ClientError as e:
                 print(f"Failed to export {user.name}: item={item}: {e}",
                       file=stderr)
-    
+
     if group_file is not None and groups_table is not None:
         for group in shadow_db.groups.values():
             item = group_to_dynamodb_item(group)
@@ -235,7 +235,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 print(f"Failed to export {group.name}: item={item}: {e}",
                       file=stderr)
     elapsed = "%.2f" % (time() - start)
-    
+
     print(f"Exported {users_exported} user(s) and {groups_exported} "
           f"group(s) in {elapsed} s.")
 

@@ -10,7 +10,7 @@ from functools import partial
 from logging import getLogger
 from os import (
     chmod, close as os_close, fsync, getpid, kill, link,
-    open as os_open, rename, stat, strerror, unlink,
+    open as os_open, rename, stat, strerror, umask, unlink,
     O_CLOEXEC, O_CREAT, O_TRUNC, O_WRONLY, O_RDWR)
 from os.path import exists
 from stat import S_IMODE
@@ -689,8 +689,12 @@ class ShadowDatabase():
         ensure_user_owns_file(user.uid, auth_keys_file, mode, 0o722)
 
         with ChangeEffectiveId(user.uid, user.gid):
-            osfd = os_open(
-                auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, mode)
+            orig_umask = umask(0)
+            try:
+                osfd = os_open(
+                    auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, mode)
+            finally:
+                umask(orig_umask)
 
             with open(osfd, "r+") as fd:
                 lockf(fd.fileno(), LOCK_SH)
@@ -1161,10 +1165,16 @@ class ShadowWriter():
     def __enter__(self) -> Tuple[TextIO, TextIO]:
         fd_fileno = sfd_fileno = -1
         try:
-            fd_fileno = os_open(
-                self.filename, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-            sfd_fileno = os_open(
-                self.shadow_filename, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+            # Follow our permission bits exactly -- don't use process permission
+            # bits.
+            orig_umask = umask(0)
+            try:
+                fd_fileno = os_open(
+                    self.filename, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+                sfd_fileno = os_open(
+                    self.shadow_filename, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+            finally:
+                umask(orig_umask)
             lockf(fd_fileno, LOCK_EX)
             lockf(sfd_fileno, LOCK_EX)
 
