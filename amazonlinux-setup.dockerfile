@@ -1,4 +1,4 @@
-FROM amazonlinux:2ex
+FROM amazonlinux:2
 RUN yum update -y
 RUN yum install -y less man python3 sudo strace util-linux-user
 RUN pip3 install virtualenv

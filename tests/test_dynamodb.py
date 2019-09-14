@@ -7,6 +7,7 @@ import boto3
 from moto import mock_dynamodb2
 
 from dynamodbusermanager.daemon import Daemon
+from dynamodbusermanager.cli import parse_config
 
 DUMMY_KEY_1 = """\
 ssh-rsa EXAMPLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
@@ -142,7 +143,7 @@ class DynamoDBTest(TestCase):
 }
 """)
 
-        config = Daemon.parse_config()
+        config = parse_config()
         daemon = Daemon(ddb, config=config)
 
         class TestDone(Exception):
