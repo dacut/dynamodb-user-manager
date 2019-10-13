@@ -668,7 +668,8 @@ class ShadowDatabase():
         This does not re-write the file if it already has the correct contents.
         """
         mask = self.config.get("UMASK", 0o022)
-        mode = 0o666 & ~mask
+        dir_mode = 0o777 & ~mask
+        file_mode = 0o666 & ~mask
 
         if not user.home:
             log.warning(
@@ -684,15 +685,15 @@ class ShadowDatabase():
 
         ssh_dir = user.home + "/.ssh"
         auth_keys_file = ssh_dir + "/authorized_keys"
-        auth_keys = "\n".join(sorted(user.ssh_public_keys))
-        ensure_user_owns_dir(user.uid, user.gid, ssh_dir, mode, 0o722)
-        ensure_user_owns_file(user.uid, auth_keys_file, mode, 0o722)
+        auth_keys = "\n".join(sorted(user.ssh_public_keys)) + "\n"
+        ensure_user_owns_dir(user.uid, user.gid, ssh_dir, dir_mode, 0o722)
+        ensure_user_owns_file(user.uid, auth_keys_file, file_mode, 0o722)
 
         with ChangeEffectiveId(user.uid, user.gid):
             orig_umask = umask(0)
             try:
                 osfd = os_open(
-                    auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, mode)
+                    auth_keys_file, O_RDWR | O_CREAT | O_CLOEXEC, file_mode)
             finally:
                 umask(orig_umask)
 
