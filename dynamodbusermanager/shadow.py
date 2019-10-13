@@ -668,7 +668,7 @@ class ShadowDatabase():
         This does not re-write the file if it already has the correct contents.
         """
         mask = self.config.get("UMASK", 0o022)
-        mode = 0o777 & ~mask
+        mode = 0o666 & ~mask
 
         if not user.home:
             log.warning(
