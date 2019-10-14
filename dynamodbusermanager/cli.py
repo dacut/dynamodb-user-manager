@@ -21,7 +21,7 @@ Options:
 
 Configuration file:
 The configuration file is a JSON document in the form:
-{
+{{
     "aws_access_key": "AKIDEXAMPLE",
     "aws_profile": "default",
     "aws_region": "us-east-1",
@@ -31,11 +31,11 @@ The configuration file is a JSON document in the form:
     "full_update_period": 3600,
     "group_table_name": "Groups",
     "user_table_name": "Users",
-    "logging": {
+    "logging": {{
         "version": 1,
         ...
-    }
-}
+    }}
+}}
 
 The valid configuration keys are:
     aws_access_key / aws_secret_key / aws_session_token / aws_profile <str>
