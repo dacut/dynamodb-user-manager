@@ -11,7 +11,7 @@ setup(
     description="Manage the local user database from DynamoDB",
     long_description=readme,
     long_description_content_type="text/markdown",
-    version="1.0.0",
+    version="1.0.1",
     packages=["dynamodbusermanager"],
     entry_points={
         "console_scripts": [
