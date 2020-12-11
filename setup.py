@@ -11,7 +11,7 @@ setup(
     description="Manage the local user database from DynamoDB",
     long_description=readme,
     long_description_content_type="text/markdown",
-    version="0.4.1",
+    version="1.0.2",
     packages=["dynamodbusermanager"],
     entry_points={
         "console_scripts": [
@@ -19,8 +19,8 @@ setup(
             "dynamodb-user-export = dynamodbusermanager.export:main",
         ]
     },
-    install_requires=["boto3>=1.9","daemonize>=2.5.0","requests<=2.21","urllib3>=1.20,<1.25"],
-    tests_require=["coverage>=4.5.3", "moto>=1.3.8", "mypy>=0.701", "nose>=1.3.7", "pylint>=2.3.1"],
+    install_requires=["boto3>=1.16","daemonize>=2.5.0","requests>=2.25"],
+    tests_require=["coverage>=5.3", "moto>=1.3.16", "mypy>=0.790", "nose>=1.3.7", "pylint>=2.6.0"],
     python_requires=">=3.6",
     zip_safe=False,
     author="David Cuthbert",
